@@ -1,4 +1,4 @@
-"""GitHub 저장소 검색으로 LoRA 관련 프로젝트 수집."""
+"""GitHub 저장소 검색으로 LoRA 관련 프로젝트 / ComfyUI 워크플로우 저장소 수집."""
 from __future__ import annotations
 
 import logging
@@ -11,16 +11,19 @@ log = logging.getLogger(__name__)
 
 API_SEARCH = "https://api.github.com/search/repositories"
 
-# (검색어, 정렬). 비로그인 검색 API 는 분당 10회 제한이므로 쿼리 수를 적게 유지.
-QUERIES: list[tuple[str, str]] = [
-    ("comfyui lora in:name,description,topics", "updated"),
-    ("comfyui lora in:name,description,topics", "stars"),
-    ("topic:lora topic:comfyui", "updated"),
-    ("lora flux in:name,description,topics", "updated"),
-    ("lora sdxl in:name,description,topics", "updated"),
-    ("lora wan video in:name,description,topics", "updated"),
-    ("lora training diffusion in:name,description,topics", "updated"),
+# (kind, 검색어, 정렬). 비로그인 검색 API 는 분당 10회 제한이므로 총 쿼리 수를 10개 미만으로 유지.
+QUERIES: list[tuple[str, str, str]] = [
+    ("lora", "comfyui lora in:name,description,topics", "updated"),
+    ("lora", "comfyui lora in:name,description,topics", "stars"),
+    ("lora", "topic:lora topic:comfyui", "updated"),
+    ("lora", "lora flux in:name,description,topics", "updated"),
+    ("lora", "lora training diffusion in:name,description,topics", "updated"),
+    ("workflow", "comfyui workflow in:name,description,topics", "updated"),
+    ("workflow", "comfyui workflow in:name,description,topics", "stars"),
+    ("workflow", "topic:comfyui-workflow", "updated"),
 ]
+
+_WORKFLOW_TOPICS = {"comfyui-workflow", "comfyui-workflows", "workflow", "workflows"}
 
 
 def _headers(token: str = "") -> dict:
@@ -30,7 +33,14 @@ def _headers(token: str = "") -> dict:
     return h
 
 
-def parse_repo(r: dict) -> LoraItem | None:
+def detect_kind(full_name: str, topics: list[str], default: str = "lora") -> str:
+    """이름/토픽에 workflow 가 있으면 어느 쿼리로 찾았든 워크플로우로 본다."""
+    if "workflow" in (full_name or "").lower() or any(t.lower() in _WORKFLOW_TOPICS for t in topics):
+        return "workflow"
+    return default
+
+
+def parse_repo(r: dict, kind: str = "lora") -> LoraItem | None:
     full = r.get("full_name")
     if not full or r.get("fork"):
         return None
@@ -45,6 +55,7 @@ def parse_repo(r: dict) -> LoraItem | None:
     return LoraItem(
         key=f"gh:{full}",
         source="github",
+        kind=detect_kind(full, topics, kind),
         name=full,
         author=owner.get("login") or full.split("/")[0],
         url=r.get("html_url") or f"https://github.com/{full}",
@@ -61,15 +72,15 @@ def fetch(per_page: int = 50, token: str = "", timeout: int = 30, workers: int =
     items: dict[str, LoraItem] = {}
     errors: list[str] = []
 
-    def run(q: str, sort: str):
+    def run(kind: str, q: str, sort: str):
         params = {"q": q, "sort": sort, "order": "desc", "per_page": per_page}
-        return http.get_json(API_SEARCH, params=params, headers=_headers(token), timeout=timeout)
+        return kind, http.get_json(API_SEARCH, params=params, headers=_headers(token), timeout=timeout)
 
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        futures = [pool.submit(run, q, s) for q, s in QUERIES]
+        futures = [pool.submit(run, k, q, s) for k, q, s in QUERIES]
         for fut in as_completed(futures):
             try:
-                data = fut.result()
+                kind, data = fut.result()
             except http.HttpError as e:
                 if e.status in (403, 429):
                     msg = "GitHub API 요청 한도 초과 (GITHUB_TOKEN 설정 시 한도가 늘어납니다)"
@@ -86,7 +97,7 @@ def fetch(per_page: int = 50, token: str = "", timeout: int = 30, workers: int =
                 continue
             for r in (data or {}).get("items") or []:
                 try:
-                    item = parse_repo(r)
+                    item = parse_repo(r, kind)
                 except Exception:  # noqa: BLE001
                     continue
                 if item and item.key not in items:

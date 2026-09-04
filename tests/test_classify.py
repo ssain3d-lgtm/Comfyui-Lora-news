@@ -30,6 +30,9 @@ class ClassifyTests(unittest.TestCase):
             "hf:someone/hunyuanvideo-orbit-camera": "HunyuanVideo",
             "hf:someone/sd15-watercolor-dreams": "SD 1.5",
             "gh:ltdrdata/ComfyUI-Manager": "범용/도구",
+            "civitai:1001": "SDXL",
+            "civitai:1002": "Illustrious (SDXL 계열)",
+            "civitai:1003": "Wan 2.x (비디오)",
         }
         for key, base in expect.items():
             self.assertEqual(self.items[key].base_model, base, key)
@@ -49,7 +52,10 @@ class ClassifyTests(unittest.TestCase):
             "gh:kohya-ss/sd-scripts": "학습 도구",
             "gh:someone/ComfyUI-Lora-Manager": "로더/관리",
             "gh:someone/lora-merge-tool": "병합/변환",
-            "gh:someone/awesome-wan-loras": "워크플로우/모음",
+            "gh:someone/awesome-wan-loras": "자료 모음",
+            "civitai:1001": "디테일 향상",
+            "civitai:1002": "스타일/화풍",
+            "civitai:1003": "가속 (저스텝)",
         }
         for key, cat in expect.items():
             self.assertEqual(self.items[key].category, cat, key)
@@ -82,6 +88,34 @@ class ClassifyTests(unittest.TestCase):
         gh = self.items["gh:kohya-ss/sd-scripts"]
         self.assertTrue(gh.summary_ko.startswith("GitHub · 학습 도구"))
         self.assertEqual(self.items["gh:someone/ComfyUI-Lora-Manager"].trigger_words, [], "GitHub 저장소는 트리거 추출 안 함")
+
+    def test_workflows(self):
+        expect = {
+            "civitai:2001": ("FLUX Kontext", "WF 편집/인페인팅"),
+            "civitai:2002": ("Wan 2.x (비디오)", "WF 영상 생성"),
+            "gh:comfyanonymous/ComfyUI_examples": ("범용/미상", "WF 모음/템플릿"),
+            "gh:someone/comfyui-pulid-consistent-character-workflow": ("FLUX.1", "WF 캐릭터 일관성"),
+            "hf:datasets/someone/comfyui-workflows-collection": ("FLUX.1", "WF 모음/템플릿"),
+        }
+        for key, (base, cat) in expect.items():
+            it = self.items[key]
+            self.assertEqual(it.kind, "workflow", key)
+            self.assertEqual(it.base_model, base, key)
+            self.assertEqual(it.category, cat, key)
+            self.assertEqual(it.trigger_words, [], "워크플로우는 트리거 추출 안 함")
+        wf = self.items["civitai:2002"]
+        self.assertIn("이미지→비디오(I2V)", wf.hints)
+        self.assertIn("GGUF/저사양(VRAM 절약)", wf.hints)
+        self.assertTrue(wf.summary_ko.startswith("Wan 2.x (비디오) 기반 영상 생성 ComfyUI 워크플로우"), wf.summary_ko)
+        self.assertIn("JSON 1개", wf.summary_ko)
+        generic = self.items["gh:comfyanonymous/ComfyUI_examples"]
+        self.assertTrue(generic.summary_ko.startswith("ComfyUI 워크플로우 모음/템플릿"), generic.summary_ko)
+
+    def test_civitai_summary(self):
+        it = self.items["civitai:1002"]
+        self.assertEqual(it.hints, ["애니메이션 화풍", "지브리풍", "배경/환경"])
+        self.assertTrue(it.summary_ko.startswith("Illustrious (SDXL 계열) 기반 스타일/화풍 LoRA · 애니메이션 화풍, 지브리풍"), it.summary_ko)
+        self.assertTrue(it.summary_ko.endswith("트리거: ghibli style"), it.summary_ko)
 
     def test_claude_summary_not_overwritten(self):
         it = LoraItem(key="hf:x/y", source="huggingface", name="x/y-flux-style", author="x", url="",

@@ -5,17 +5,20 @@
   const $ = (sel) => document.querySelector(sel);
   const state = {
     items: [],
-    facets: { base_models: [], categories: [] },
     status: {},
     filters: loadPrefs({
-      q: "", source: "all", base: null, cat: null,
+      kind: "lora", q: "", source: "all", base: null, cat: null,
       onlyNew: false, recent7: false, hideNsfw: true, sort: "new", group: "none",
     }),
     pollTimer: null,
   };
 
+  const KINDS = [["lora", "LoRA"], ["workflow", "워크플로우"]];
+  const SOURCES = [["all", "전체"], ["huggingface", "Hugging Face"], ["github", "GitHub"], ["civitai", "Civitai"]];
+  const SOURCE_LABEL = { huggingface: "Hugging Face", github: "GitHub", civitai: "Civitai" };
   const CAT_ORDER = ["가속 (저스텝)", "이미지 편집", "디테일 향상", "영상 모션/카메라", "캐릭터", "실사/포토",
-    "의상/포즈/컨셉", "스타일/화풍", "기타", "학습 도구", "커스텀 노드", "로더/관리", "병합/변환", "워크플로우/모음", "모델/가중치"];
+    "의상/포즈/컨셉", "스타일/화풍", "기타", "학습 도구", "커스텀 노드", "로더/관리", "병합/변환", "자료 모음", "모델/가중치",
+    "WF 이미지 생성", "WF 영상 생성", "WF 편집/인페인팅", "WF 업스케일/보정", "WF 컨트롤넷/포즈", "WF 캐릭터 일관성", "WF 학습/도구", "WF 모음/템플릿"];
 
   function loadPrefs(defaults) {
     try {
@@ -63,6 +66,8 @@
     const d = parseDate(s);
     return d && (Date.now() - d.getTime()) <= n * 86400 * 1000;
   }
+  function cmpDate(a, b) { return (parseDate(a)?.getTime() || 0) - (parseDate(b)?.getTime() || 0); }
+  function kindItems() { return state.items.filter((it) => (it.kind || "lora") === state.filters.kind); }
 
   // ---------------------------------------------------------------- data
   async function load() {
@@ -70,7 +75,6 @@
       const res = await fetch("/api/items", { cache: "no-store" });
       const data = await res.json();
       state.items = data.items || [];
-      state.facets = data.facets || state.facets;
       state.status = data.status || {};
     } catch (e) {
       state.status = { last_error: "서버에 연결할 수 없습니다: " + e };
@@ -118,7 +122,7 @@
   function visibleItems() {
     const f = state.filters;
     const q = f.q.trim().toLowerCase();
-    let list = state.items.filter((it) => {
+    const list = kindItems().filter((it) => {
       if (f.source !== "all" && it.source !== f.source) return false;
       if (f.base && it.base_model !== f.base) return false;
       if (f.cat && it.category !== f.cat) return false;
@@ -143,11 +147,11 @@
     list.sort(by[f.sort] || by.new);
     return list;
   }
-  function cmpDate(a, b) { return (parseDate(a)?.getTime() || 0) - (parseDate(b)?.getTime() || 0); }
 
   // ---------------------------------------------------------------- render
   function renderAll() {
     renderStatus();
+    renderTabs();
     renderStats();
     renderFacets();
     renderList();
@@ -175,16 +179,27 @@
     $("#refresh-btn").disabled = !!st.refreshing;
   }
 
+  function renderTabs() {
+    const counts = {};
+    state.items.forEach((it) => { const k = it.kind || "lora"; counts[k] = (counts[k] || 0) + 1; });
+    $("#tabs").innerHTML = KINDS.map(([k, label]) =>
+      `<button class="tab${state.filters.kind === k ? " active" : ""}" data-kind="${k}">${esc(label)}<small>${counts[k] || 0}</small></button>`
+    ).join("");
+  }
+
   function renderStats() {
-    const c = (state.status && state.status.counts) || {};
+    const items = kindItems();
+    const n = (fn) => items.filter(fn).length;
     const cells = [
-      ["전체", c.total || state.items.length, ""],
-      ["신규 (최근 발견)", c.new || 0, "new"],
-      ["이번 실행에서 발견", c.found_this_run || 0, "found"],
-      ["Hugging Face", c.huggingface || 0, ""],
-      ["GitHub", c.github || 0, ""],
+      ["전체", items.length, ""],
+      ["신규 (최근 발견)", n((it) => it.is_new), "new"],
+      ["이번 실행에서 발견", n((it) => it.found_this_run), "found"],
+      ["Hugging Face", n((it) => it.source === "huggingface"), ""],
+      ["GitHub", n((it) => it.source === "github"), ""],
+      ["Civitai", n((it) => it.source === "civitai"), ""],
     ];
-    if (c.claude) cells.push(["Claude 한글 요약", c.claude, ""]);
+    const claude = n((it) => it.summary_source === "claude");
+    if (claude) cells.push(["Claude 한글 요약", claude, ""]);
     $("#stats").innerHTML = cells.map(([l, v, cls]) => `<div class="stat ${cls}"><b>${esc(v)}</b><span>${esc(l)}</span></div>`).join("");
   }
 
@@ -192,18 +207,24 @@
     return `<span class="chip${active ? " active" : ""}" ${attr}>${esc(label)}${count != null ? `<small>${esc(count)}</small>` : ""}</span>`;
   }
 
+  function facetCounts(items, field) {
+    const m = new Map();
+    items.forEach((it) => { const k = it[field] || "기타"; m.set(k, (m.get(k) || 0) + 1); });
+    return Array.from(m.entries());
+  }
+
   function renderFacets() {
     const f = state.filters;
-    const counts = { all: state.items.length, huggingface: 0, github: 0 };
-    state.items.forEach((it) => { counts[it.source] = (counts[it.source] || 0) + 1; });
-    $("#source-chips").innerHTML = [["all", "전체"], ["huggingface", "Hugging Face"], ["github", "GitHub"]]
-      .map(([k, l]) => chip(l, counts[k] || 0, f.source === k, `data-source="${k}"`)).join("");
+    const items = kindItems();
+    const counts = { all: items.length };
+    items.forEach((it) => { counts[it.source] = (counts[it.source] || 0) + 1; });
+    $("#source-chips").innerHTML = SOURCES.map(([k, l]) => chip(l, counts[k] || 0, f.source === k, `data-source="${k}"`)).join("");
 
-    const bases = state.facets.base_models || [];
+    const bases = facetCounts(items, "base_model").sort((a, b) => b[1] - a[1]);
     $("#base-chips").innerHTML = chip("전체", null, !f.base, `data-base=""`) +
       bases.map(([b, n]) => chip(b, n, f.base === b, `data-base="${esc(b)}"`)).join("");
 
-    const cats = (state.facets.categories || []).slice().sort((a, b) => CAT_ORDER.indexOf(a[0]) - CAT_ORDER.indexOf(b[0]));
+    const cats = facetCounts(items, "category").sort((a, b) => CAT_ORDER.indexOf(a[0]) - CAT_ORDER.indexOf(b[0]));
     $("#cat-chips").innerHTML = chip("전체", null, !f.cat, `data-cat=""`) +
       cats.map(([c, n]) => chip(c, n, f.cat === c, `data-cat="${esc(c)}"`)).join("");
 
@@ -215,32 +236,43 @@
     $("#group").value = f.group;
   }
 
+  function sourceBadge(it) {
+    if (it.source === "huggingface") return `<span class="badge hf">HF</span>`;
+    if (it.source === "civitai") return `<span class="badge cv">Civitai</span>`;
+    return `<span class="badge gh">GitHub</span>`;
+  }
+
+  function metrics(it) {
+    if (it.source === "github") return `<span title="스타">★ ${fmtNum(it.likes)}</span><span title="포크">⑂ ${fmtNum(it.downloads)}</span>`;
+    if (it.source === "civitai") return `<span title="다운로드">⬇ ${fmtNum(it.downloads)}</span><span title="좋아요">👍 ${fmtNum(it.likes)}</span>`;
+    return `<span title="다운로드">⬇ ${fmtNum(it.downloads)}</span><span title="좋아요">♥ ${fmtNum(it.likes)}</span>`;
+  }
+
   function card(it) {
-    const isHf = it.source === "huggingface";
-    const metrics = isHf
-      ? `<span title="다운로드">⬇ ${fmtNum(it.downloads)}</span><span title="좋아요">♥ ${fmtNum(it.likes)}</span>`
-      : `<span title="스타">★ ${fmtNum(it.likes)}</span><span title="포크">⑂ ${fmtNum(it.downloads)}</span>`;
+    const isWf = (it.kind || "lora") === "workflow";
     const triggers = (it.trigger_words || []).length
       ? `<div class="triggers">트리거 ${it.trigger_words.map((t) => `<span class="trigger" data-copy="${esc(t)}" title="클릭하면 복사">${esc(t)}</span>`).join("")}</div>`
       : "";
     const files = (it.files || []).length
       ? `<div class="files">${it.files.map((f) => `<code>${esc(f)}</code>`).join("")}</div>` : "";
     const desc = (it.description || "").trim();
+    const fileLabel = (it.files || []).length ? ` · ${isWf ? "JSON" : "파일"} ${it.files.length}개` : "";
     const details = (desc || files)
-      ? `<details><summary>원문 설명${(it.files || []).length ? " · 파일 " + it.files.length + "개" : ""}</summary>${desc ? `<p>${esc(desc)}</p>` : ""}${files}</details>`
+      ? `<details><summary>원문 설명${fileLabel}</summary>${desc ? `<p>${esc(desc)}</p>` : ""}${files}</details>`
       : "";
     return `<article class="card${it.is_new ? " new" : ""}">
       <div class="card-top">
         <div class="badges">
-          <span class="badge ${isHf ? "hf" : "gh"}">${isHf ? "HF" : "GitHub"}</span>
+          ${sourceBadge(it)}
+          ${isWf ? `<span class="badge wf">WF</span>` : ""}
           ${it.found_this_run ? `<span class="badge found">이번 실행 발견</span>` : (it.is_new ? `<span class="badge new">NEW</span>` : "")}
           ${it.nsfw ? `<span class="badge nsfw">NSFW</span>` : ""}
           ${it.summary_source === "claude" ? `<span class="badge claude" title="Claude가 작성한 요약">AI 요약</span>` : ""}
         </div>
-        <div class="metrics">${metrics}</div>
+        <div class="metrics">${metrics(it)}</div>
       </div>
       <div class="title"><a href="${esc(it.url)}" target="_blank" rel="noopener">${esc(it.name)}</a></div>
-      <div class="author">${esc(it.author)}${it.pipeline ? " · " + esc(it.pipeline) : ""}</div>
+      <div class="author">${esc(it.author)}${it.pipeline && !isWf ? " · " + esc(it.pipeline) : ""}</div>
       <div class="tags"><span class="tag base">${esc(it.base_model)}</span><span class="tag cat">${esc(it.category)}</span>${(it.tags || []).slice(0, 4).map((t) => `<span class="tag">${esc(t)}</span>`).join("")}</div>
       <div class="summary">${esc(it.summary_ko)}</div>
       ${triggers}
@@ -252,9 +284,10 @@
   function renderList() {
     const list = visibleItems();
     const f = state.filters;
-    $("#result-count").textContent = `${list.length}개 표시 (전체 ${state.items.length}개)`;
+    const total = kindItems().length;
+    $("#result-count").textContent = `${list.length}개 표시 (${f.kind === "workflow" ? "워크플로우" : "LoRA"} ${total}개 중)`;
     if (!list.length) {
-      $("#list").innerHTML = `<div class="empty">${state.items.length ? "조건에 맞는 항목이 없습니다." : (state.status.refreshing ? "데이터를 가져오는 중입니다…" : "데이터가 없습니다. 새로고침을 눌러 주세요.")}</div>`;
+      $("#list").innerHTML = `<div class="empty">${total ? "조건에 맞는 항목이 없습니다." : (state.status.refreshing ? "데이터를 가져오는 중입니다…" : "데이터가 없습니다. 새로고침을 눌러 주세요.")}</div>`;
       return;
     }
     if (f.group === "none") {
@@ -263,11 +296,11 @@
     }
     const groups = new Map();
     list.forEach((it) => {
-      const k = f.group === "source" ? (it.source === "huggingface" ? "Hugging Face" : "GitHub") : (it[f.group] || "기타");
+      const k = f.group === "source" ? (SOURCE_LABEL[it.source] || it.source) : (it[f.group] || "기타");
       if (!groups.has(k)) groups.set(k, []);
       groups.get(k).push(it);
     });
-    let keys = Array.from(groups.keys());
+    const keys = Array.from(groups.keys());
     if (f.group === "category") keys.sort((a, b) => CAT_ORDER.indexOf(a) - CAT_ORDER.indexOf(b));
     else keys.sort((a, b) => groups.get(b).length - groups.get(a).length);
     $("#list").innerHTML = keys.map((k) =>
@@ -278,6 +311,13 @@
   // ---------------------------------------------------------------- events
   function bind() {
     $("#refresh-btn").addEventListener("click", refresh);
+    $("#tabs").addEventListener("click", (e) => {
+      const el = e.target.closest("[data-kind]"); if (!el) return;
+      if (state.filters.kind === el.dataset.kind) return;
+      state.filters.kind = el.dataset.kind;
+      state.filters.base = null; state.filters.cat = null;   // 종류별로 다른 분류이므로 초기화
+      savePrefs(); renderAll();
+    });
     let t = null;
     $("#search").addEventListener("input", (e) => {
       clearTimeout(t);

@@ -47,6 +47,8 @@ class SummarizerTests(unittest.TestCase):
                      category="기타", description="character"),
             LoraItem(key="gh:e/f", source="github", name="e/f", author="e", url="", base_model="범용/도구",
                      category="모델/가중치", description="trainer"),
+            LoraItem(key="civitai:9", source="civitai", kind="workflow", name="WF", author="w", url="", base_model="FLUX.1",
+                     category="WF 이미지 생성", description="basic flux workflow"),
         ]
 
     def test_summarize_applies_and_caches(self):
@@ -55,14 +57,20 @@ class SummarizerTests(unittest.TestCase):
                 {"key": "hf:a/b", "summary_ko": "FLUX용 스타일 LoRA", "category": "스타일/화풍"},
                 {"key": "hf:c/d", "summary_ko": "SDXL 캐릭터 LoRA", "category": "캐릭터"},
                 {"key": "gh:e/f", "summary_ko": "학습 스크립트", "category": "학습 도구"},
+                {"key": "civitai:9", "summary_ko": "기본 FLUX 워크플로우", "category": "WF 이미지 생성"},
                 {"key": "hf:zzz", "summary_ko": "무시됨", "category": "기타"},
             ]}
             s, stub = self.make(tmp, reply)
             its = self.items()
             n, errors = s.summarize(its)
             self.assertEqual(errors, [])
-            self.assertEqual(n, 3)
+            self.assertEqual(n, 4)
             self.assertEqual(len(stub.calls), 2, "batch_size=2 -> 2회 호출")
+            payload_items = json.loads(stub.calls[1]["messages"][0]["content"].split("\n\n", 1)[1])["items"]
+            wf = next(i for i in payload_items if i["key"] == "civitai:9")
+            self.assertEqual(wf["kind"], "workflow")
+            self.assertIn("WF 이미지 생성", wf["allowed_categories"])
+            self.assertNotIn("캐릭터", wf["allowed_categories"])
             call = stub.calls[0]
             self.assertEqual(call["model"], "claude-opus-5")
             self.assertEqual(call["fallbacks"], "default")
@@ -76,12 +84,12 @@ class SummarizerTests(unittest.TestCase):
             self.assertEqual(by["hf:a/b"].category, "스타일/화풍")
             self.assertEqual(by["gh:e/f"].summary_source, "claude")
             cache = json.loads((Path(tmp) / "summaries.json").read_text(encoding="utf-8"))
-            self.assertEqual(set(cache), {"hf:a/b", "hf:c/d", "gh:e/f"})
+            self.assertEqual(set(cache), {"hf:a/b", "hf:c/d", "gh:e/f", "civitai:9"})
 
             # 두 번째 실행: 캐시 적용, 추가 호출 없음
             s2, stub2 = self.make(tmp, {"items": []})
             fresh = self.items()
-            self.assertEqual(s2.apply_cached(fresh), 3)
+            self.assertEqual(s2.apply_cached(fresh), 4)
             n2, _ = s2.summarize(fresh)
             self.assertEqual(n2, 0)
             self.assertEqual(stub2.calls, [])

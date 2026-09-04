@@ -10,21 +10,26 @@ import logging
 import time
 from datetime import datetime, timezone
 
-from .classify import CATEGORIES
+from .classify import CATEGORIES, GH_CATEGORIES, LORA_CATEGORIES, WF_CATEGORIES
 from .models import LoraItem
 from .store import Store
 
 log = logging.getLogger(__name__)
 
-HF_CATEGORIES = [c for c in CATEGORIES if c not in ("학습 도구", "커스텀 노드", "로더/관리", "병합/변환", "워크플로우/모음", "모델/가중치")]
-GH_CATEGORIES = ["학습 도구", "커스텀 노드", "로더/관리", "병합/변환", "워크플로우/모음", "모델/가중치"]
-
 SYSTEM_PROMPT = (
-    "당신은 ComfyUI 사용자를 위해 LoRA 모델과 관련 GitHub 저장소를 한국어로 짧게 소개하는 도우미입니다. "
+    "당신은 ComfyUI 사용자를 위해 LoRA 모델, ComfyUI 워크플로우, 관련 GitHub 저장소를 한국어로 짧게 소개하는 도우미입니다. "
     "각 항목에 대해 (1) 어떤 용도인지, (2) 어떤 베이스 모델에서 쓰는지, (3) 트리거 워드나 사용 팁이 있으면 그것까지 "
-    "한두 문장(최대 100자)으로 자연스럽게 요약하세요. 정보가 부족하면 아는 범위에서만 쓰고 지어내지 마세요. "
-    "category 는 주어진 목록 중 하나를 고르세요."
+    "한두 문장(최대 100자)으로 자연스럽게 요약하세요. 워크플로우는 무엇을 만드는 흐름인지와 필요한 모델/노드를 적으세요. "
+    "정보가 부족하면 아는 범위에서만 쓰고 지어내지 마세요. category 는 각 항목의 allowed_categories 중 하나를 고르세요."
 )
+
+
+def allowed_categories(item: LoraItem) -> list[str]:
+    if item.kind == "workflow":
+        return WF_CATEGORIES
+    if item.source == "github":
+        return GH_CATEGORIES
+    return LORA_CATEGORIES
 
 OUTPUT_SCHEMA = {
     "type": "object",
@@ -52,10 +57,11 @@ def _item_payload(item: LoraItem) -> dict:
     return {
         "key": item.key,
         "source": item.source,
+        "kind": item.kind,
         "name": item.name,
         "base_model": item.base_model,
         "rule_category": item.category,
-        "allowed_categories": GH_CATEGORIES if item.source == "github" else HF_CATEGORIES,
+        "allowed_categories": allowed_categories(item),
         "tags": item.tags[:15],
         "trigger_words": item.trigger_words,
         "description": (item.description or "")[:900],

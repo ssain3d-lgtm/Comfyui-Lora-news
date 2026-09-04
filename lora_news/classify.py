@@ -1,4 +1,7 @@
-"""규칙 기반 분류: 베이스 모델 / 용도 분류 / 한글 힌트 / 한글 한 줄 요약."""
+"""규칙 기반 분류: 베이스 모델 / 용도 분류 / 한글 힌트 / 트리거 워드 / 한글 한 줄 요약.
+
+LoRA(HF·Civitai), LoRA 관련 GitHub 저장소, ComfyUI 워크플로우(세 소스 모두) 를 다룬다.
+"""
 from __future__ import annotations
 
 import re
@@ -42,30 +45,30 @@ BASE_MODEL_RULES: list[tuple[str, list[str]]] = [
     ("FLUX Kontext", ["kontext"]),
     ("FLUX.2", ["flux.2", "flux2", "flux-2", "flux_2"]),
     ("FLUX.1", ["flux", "flux.1", "flux1", "flux-dev", "flux-schnell", "flux.1-dev", "flux.1-schnell", "flux-fill", "flux-krea"]),
-    ("Wan 2.x (비디오)", ["wan2", "wan2.1", "wan2.2", "wan-2", "wan-2.1", "wan-2.2", "wan_2", "wan", "wanx", "wan-ai", "wanvideo", "wan-video"]),
-    ("HunyuanVideo", ["hunyuanvideo", "hunyuan-video", "hunyuan_video"]),
-    ("Hunyuan (이미지)", ["hunyuanimage", "hunyuan-image", "hunyuandit", "hunyuan"]),
-    ("LTX-Video", ["ltx", "ltx-video", "ltxv", "ltx2", "ltx-2"]),
+    ("Wan 2.x (비디오)", ["wan2", "wan2.1", "wan2.2", "wan-2", "wan-2.1", "wan-2.2", "wan_2", "wan", "wanx", "wan-ai", "wanvideo", "wan-video", "wan video"]),
+    ("HunyuanVideo", ["hunyuanvideo", "hunyuan-video", "hunyuan_video", "hunyuan video"]),
+    ("Hunyuan (이미지)", ["hunyuanimage", "hunyuan-image", "hunyuan image", "hunyuandit", "hunyuan"]),
+    ("LTX-Video", ["ltx", "ltx-video", "ltxv", "ltx2", "ltx-2", "ltx video"]),
     ("CogVideoX", ["cogvideo", "cogvideox"]),
     ("Mochi", ["mochi"]),
     ("AnimateDiff", ["animatediff"]),
-    ("Stable Video Diffusion", ["stable-video-diffusion", "svd"]),
-    ("Qwen-Image", ["qwen-image", "qwen_image", "qwenimage", "qwen-image-edit"]),
-    ("Z-Image", ["z-image", "z_image", "zimage"]),
+    ("Stable Video Diffusion", ["stable-video-diffusion", "stable video diffusion", "svd"]),
+    ("Qwen-Image", ["qwen-image", "qwen_image", "qwenimage", "qwen-image-edit", "qwen image", "qwen"]),
+    ("Z-Image", ["z-image", "z_image", "zimage", "z image"]),
     ("Chroma", ["chroma"]),
     ("HiDream", ["hidream"]),
     ("Lumina", ["lumina", "lumina2"]),
     ("Kolors", ["kolors"]),
     ("AuraFlow", ["auraflow"]),
     ("PixArt", ["pixart"]),
-    ("Stable Cascade", ["stable-cascade", "stablecascade"]),
+    ("Stable Cascade", ["stable-cascade", "stablecascade", "stable cascade"]),
     ("Pony (SDXL 계열)", ["pony", "ponyxl", "pony-xl", "ponydiffusion"]),
     ("Illustrious (SDXL 계열)", ["illustrious", "illustriousxl", "noobai", "noob-ai", "noobai-xl"]),
     ("Animagine (SDXL 계열)", ["animagine"]),
-    ("SD3 / 3.5", ["stable-diffusion-3", "stable-diffusion-3.5", "sd3", "sd3.5", "sd-3", "sd3-medium"]),
-    ("SDXL", ["sdxl", "stable-diffusion-xl", "sd-xl", "xl-base", "juggernaut", "realvis", "sdxl-turbo", "sdxl-lightning"]),
-    ("SD 2.x", ["stable-diffusion-2", "stable-diffusion-2-1", "sd2", "sd2.1", "sd-2"]),
-    ("SD 1.5", ["stable-diffusion-v1-5", "stable-diffusion-v1", "sd1.5", "sd-1.5", "sd15", "sd-1-5", "runwayml", "dreamshaper", "v1-5", "sd1"]),
+    ("SD3 / 3.5", ["stable-diffusion-3", "stable-diffusion-3.5", "sd3", "sd3.5", "sd-3", "sd3-medium", "sd 3.5", "sd 3"]),
+    ("SDXL", ["sdxl", "stable-diffusion-xl", "sd-xl", "xl-base", "juggernaut", "realvis", "sdxl-turbo", "sdxl-lightning", "sdxl 1.0"]),
+    ("SD 2.x", ["stable-diffusion-2", "stable-diffusion-2-1", "sd2", "sd2.1", "sd-2", "sd 2.1"]),
+    ("SD 1.5", ["stable-diffusion-v1-5", "stable-diffusion-v1", "sd1.5", "sd-1.5", "sd15", "sd-1-5", "runwayml", "dreamshaper", "v1-5", "sd1", "sd 1.5"]),
 ]
 
 VIDEO_BASES = {"Wan 2.x (비디오)", "HunyuanVideo", "LTX-Video", "CogVideoX", "Mochi", "AnimateDiff", "Stable Video Diffusion"}
@@ -90,24 +93,10 @@ def detect_base_model(item: LoraItem) -> str:
 # 용도 분류
 # ---------------------------------------------------------------------------
 
-CATEGORIES = [
-    "가속 (저스텝)",
-    "이미지 편집",
-    "디테일 향상",
-    "영상 모션/카메라",
-    "캐릭터",
-    "실사/포토",
-    "의상/포즈/컨셉",
-    "스타일/화풍",
-    "기타",
-    # GitHub 저장소용
-    "학습 도구",
-    "커스텀 노드",
-    "로더/관리",
-    "병합/변환",
-    "워크플로우/모음",
-    "모델/가중치",
-]
+LORA_CATEGORIES = ["가속 (저스텝)", "이미지 편집", "디테일 향상", "영상 모션/카메라", "캐릭터", "실사/포토", "의상/포즈/컨셉", "스타일/화풍", "기타"]
+GH_CATEGORIES = ["학습 도구", "커스텀 노드", "로더/관리", "병합/변환", "자료 모음", "모델/가중치"]
+WF_CATEGORIES = ["WF 이미지 생성", "WF 영상 생성", "WF 편집/인페인팅", "WF 업스케일/보정", "WF 컨트롤넷/포즈", "WF 캐릭터 일관성", "WF 학습/도구", "WF 모음/템플릿"]
+CATEGORIES = LORA_CATEGORIES + GH_CATEGORIES + WF_CATEGORIES
 
 HF_CATEGORY_RULES: list[tuple[str, list[str]]] = [
     ("가속 (저스텝)", ["lightning", "lcm", "turbo", "hyper-sd", "hyper sd", "hypersd", "hyper", "dmd", "dmd2", "distill", "distilled",
@@ -150,9 +139,30 @@ GH_CATEGORY_RULES: list[tuple[str, list[str]]] = [
                 "gguf", "format", "conversion", "diff"]),
     ("로더/관리", ["loader", "manager", "management", "organizer", "organize", "browser", "gallery", "civitai", "download", "downloader",
                 "metadata", "info", "preview", "sidebar", "library", "catalog", "viewer", "search"]),
-    ("워크플로우/모음", ["workflow", "workflows", "awesome", "collection", "list", "curated", "examples", "example", "template",
-                     "templates", "preset", "presets", "guide", "tutorial", "notebook", "colab"]),
+    ("자료 모음", ["awesome", "collection", "list", "curated", "examples", "example", "guide", "tutorial", "notebook", "colab", "resources"]),
     ("모델/가중치", ["weights", "checkpoint", "release", "model card", "safetensors", "lora for", "-lora", "lora-", "pretrained"]),
+]
+
+WF_CATEGORY_RULES: list[tuple[str, list[str]]] = [
+    ("WF 영상 생성", ["video", "wan", "wan2", "wan2.1", "wan2.2", "hunyuanvideo", "hunyuan video", "ltx", "ltxv", "animatediff", "i2v",
+                   "t2v", "animate", "animation", "svd", "cogvideo", "mochi", "framepack", "img2vid", "image-to-video", "text-to-video",
+                   "vace", "motion", "frame interpolation", "rife"]),
+    ("WF 편집/인페인팅", ["inpaint", "inpainting", "outpaint", "outpainting", "edit", "editing", "kontext", "qwen-image-edit", "qwen image edit",
+                      "remove", "replace", "relight", "try-on", "tryon", "swap", "background removal", "mask", "masking", "fill", "eraser",
+                      "object removal", "img2img", "image-to-image"]),
+    ("WF 업스케일/보정", ["upscale", "upscaler", "upscaling", "hires", "hires fix", "hi-res", "detailer", "face detailer", "facedetailer",
+                       "restore", "restoration", "enhance", "enhancer", "supir", "tile", "tiled", "refiner", "refine", "sharpen",
+                       "ultimate sd upscale", "denoise"]),
+    ("WF 컨트롤넷/포즈", ["controlnet", "control net", "openpose", "pose", "depth", "canny", "lineart", "scribble", "ipadapter",
+                       "ip-adapter", "ip adapter", "reference", "redux", "union", "sketch to image", "style transfer"]),
+    ("WF 캐릭터 일관성", ["character", "consistent", "consistency", "pulid", "instantid", "instant id", "faceid", "face id", "reactor",
+                       "portrait", "identity", "face swap", "photomaker", "same character", "character sheet"]),
+    ("WF 학습/도구", ["train", "training", "lora training", "dataset", "caption", "captioning", "tool", "utility", "batch", "automation",
+                    "api", "pipeline", "script", "benchmark", "test", "compare", "xy plot", "grid"]),
+    ("WF 모음/템플릿", ["collection", "awesome", "templates", "template", "examples", "example", "pack", "library", "list", "workflows",
+                     "starter", "beginner", "tutorial", "guide", "curated", "all-in-one", "all in one"]),
+    ("WF 이미지 생성", ["txt2img", "text-to-image", "text to image", "t2i", "generation", "generate", "flux", "sdxl", "sd1.5", "sd 1.5",
+                     "basic", "simple", "illustrious", "pony", "chroma", "qwen", "hidream", "z-image", "portrait", "anime", "realistic"]),
 ]
 
 
@@ -169,6 +179,12 @@ def _score_rules(item: LoraItem, rules: list[tuple[str, list[str]]]) -> list[tup
 
 
 def detect_category(item: LoraItem) -> str:
+    if item.kind == "workflow":
+        scored = _score_rules(item, WF_CATEGORY_RULES)
+        if scored and scored[0][0] > 0:
+            return scored[0][1]
+        return "WF 영상 생성" if item.base_model in VIDEO_BASES else "WF 이미지 생성"
+
     if item.source == "github":
         scored = _score_rules(item, GH_CATEGORY_RULES)
         return scored[0][1] if scored and scored[0][0] > 0 else "모델/가중치"
@@ -254,6 +270,27 @@ HINT_RULES: list[tuple[str, list[str]]] = [
     ("성인(NSFW)", ["nsfw", "explicit", "not-for-all-audiences", "hentai", "nude"]),
 ]
 
+# 워크플로우 전용 힌트 (먼저 적용)
+WF_HINT_RULES: list[tuple[str, list[str]]] = [
+    ("이미지→비디오(I2V)", ["i2v", "image-to-video", "image to video", "img2vid"]),
+    ("텍스트→비디오(T2V)", ["t2v", "text-to-video", "text to video"]),
+    ("ControlNet 사용", ["controlnet", "control net", "openpose", "canny", "depth"]),
+    ("IPAdapter/Redux 스타일 참조", ["ipadapter", "ip-adapter", "ip adapter", "redux", "style transfer"]),
+    ("얼굴 일관성(PuLID/InstantID/FaceID)", ["pulid", "instantid", "instant id", "faceid", "face id", "photomaker"]),
+    ("얼굴 교체(ReActor)", ["reactor", "face swap", "faceswap"]),
+    ("인페인팅/아웃페인팅", ["inpaint", "inpainting", "outpaint", "outpainting", "fill"]),
+    ("배경 제거/교체", ["background removal", "remove background", "rembg", "background replace"]),
+    ("업스케일 포함", ["upscale", "upscaler", "upscaling", "hires", "supir", "ultimate sd upscale"]),
+    ("얼굴/디테일 보정(Detailer)", ["detailer", "face detailer", "facedetailer", "adetailer"]),
+    ("프레임 보간", ["frame interpolation", "rife", "interpolation"]),
+    ("LoRA 스택/여러 LoRA 사용", ["lora stack", "multiple lora", "lora loader", "power lora"]),
+    ("GGUF/저사양(VRAM 절약)", ["gguf", "low vram", "lowvram", "8gb", "12gb", "fp8", "nf4"]),
+    ("배치/자동화", ["batch", "automation", "automated", "queue"]),
+    ("API/외부 연동", ["api", "webhook", "discord", "telegram"]),
+    ("초보자용/기본 템플릿", ["basic", "simple", "starter", "beginner", "minimal", "template"]),
+    ("고급/올인원", ["advanced", "all-in-one", "all in one", "ultimate", "complete"]),
+]
+
 
 def extract_hints(item: LoraItem, limit: int = 3) -> list[str]:
     text = " ".join([
@@ -264,7 +301,11 @@ def extract_hints(item: LoraItem, limit: int = 3) -> list[str]:
         item.example_prompt or "",
     ]).lower()
     found: list[str] = []
-    for hint, keywords in HINT_RULES:
+    rules = (WF_HINT_RULES + HINT_RULES) if item.kind == "workflow" else HINT_RULES
+    for hint, keywords in rules:
+        # 'character' 같은 흔한 단어는 캐릭터 분류일 때만 힌트로 쓴다
+        if hint == "특정 인물/캐릭터 재현" and item.category != "캐릭터":
+            continue
         if _any(text, keywords) and hint not in found:
             found.append(hint)
             if len(found) >= limit:
@@ -320,23 +361,51 @@ CATEGORY_PURPOSE = {
     "커스텀 노드": "ComfyUI 커스텀 노드",
     "로더/관리": "LoRA 로드·관리·미리보기 도구",
     "병합/변환": "LoRA 병합·추출·변환 도구",
-    "워크플로우/모음": "워크플로우·자료 모음",
+    "자료 모음": "LoRA 관련 자료·목록 모음",
     "모델/가중치": "LoRA 가중치/모델 배포 저장소",
+    "WF 이미지 생성": "텍스트→이미지 생성 워크플로우",
+    "WF 영상 생성": "영상 생성 워크플로우",
+    "WF 편집/인페인팅": "이미지 편집·인페인팅 워크플로우",
+    "WF 업스케일/보정": "업스케일·디테일 보정 워크플로우",
+    "WF 컨트롤넷/포즈": "ControlNet·포즈·참조 이미지 제어 워크플로우",
+    "WF 캐릭터 일관성": "캐릭터/얼굴 일관성 유지 워크플로우",
+    "WF 학습/도구": "학습·배치·유틸리티 워크플로우",
+    "WF 모음/템플릿": "워크플로우 모음/템플릿",
 }
+
+
+def _short_desc(text: str, n: int = 140) -> str:
+    text = (text or "").strip().replace("\n", " ")
+    return text[:n] + ("…" if len(text) > n else "")
 
 
 def build_rule_summary(item: LoraItem) -> str:
     purpose = CATEGORY_PURPOSE.get(item.category, "")
     hints = [h for h in item.hints if h != "성인(NSFW)"]
+
+    if item.kind == "workflow":
+        head = purpose.replace("워크플로우", "ComfyUI 워크플로우") if purpose else "ComfyUI 워크플로우"
+        if item.base_model not in ("미상/기타", "비디오 모델 (미상)", "범용/도구", "범용/미상"):
+            head = f"{item.base_model} 기반 {head}"
+        parts = [head]
+        if hints:
+            parts.append(", ".join(hints))
+        if item.files:
+            parts.append(f"JSON {len(item.files)}개")
+        if item.description and item.source == "github":
+            parts.append(_short_desc(item.description))
+        if item.nsfw:
+            parts.append("성인(NSFW) 태그")
+        return " · ".join(parts)
+
     if item.source == "github":
         parts = [f"GitHub · {item.category}"]
         if purpose:
             parts.append(purpose)
         if hints:
             parts.append(", ".join(hints))
-        desc = (item.description or "").strip()
-        if desc:
-            parts.append(desc[:140] + ("…" if len(desc) > 140 else ""))
+        if item.description:
+            parts.append(_short_desc(item.description))
         return " · ".join(parts)
 
     parts = [f"{item.base_model} 기반 {item.category} LoRA"]
@@ -353,10 +422,17 @@ def build_rule_summary(item: LoraItem) -> str:
 
 def classify(item: LoraItem) -> LoraItem:
     """항목을 제자리에서 분류하고 규칙 기반 요약을 채운다 (Claude 요약이 있으면 덮어쓰지 않음)."""
-    item.base_model = detect_base_model(item) if item.source == "huggingface" else _gh_base_model(item)
+    if item.kind not in ("lora", "workflow"):
+        item.kind = "lora"
+    if item.source == "github" and item.kind == "lora":
+        item.base_model = _generic_base_model(item)
+    elif item.kind == "workflow":
+        item.base_model = _generic_base_model(item, fallback="범용/미상")
+    else:
+        item.base_model = detect_base_model(item)
     item.category = detect_category(item)
     item.hints = extract_hints(item)
-    if not item.trigger_words and item.source == "huggingface":
+    if not item.trigger_words and item.source != "github" and item.kind == "lora":
         item.trigger_words = extract_trigger_words(item.description)
     text = " ".join([item.name, " ".join(item.tags), item.description]).lower()
     if not item.nsfw and _any(text, ["nsfw", "not-for-all-audiences", "explicit", "hentai"]):
@@ -367,7 +443,7 @@ def classify(item: LoraItem) -> LoraItem:
     return item
 
 
-def _gh_base_model(item: LoraItem) -> str:
-    """GitHub 저장소는 특정 베이스 모델 언급이 있으면 그것을, 없으면 '범용/도구'."""
+def _generic_base_model(item: LoraItem, fallback: str = "범용/도구") -> str:
+    """특정 베이스 모델 언급이 있으면 그것을, 없으면 범용 라벨."""
     label = detect_base_model(item)
-    return label if label not in ("미상/기타", "비디오 모델 (미상)") else "범용/도구"
+    return label if label not in ("미상/기타", "비디오 모델 (미상)") else fallback

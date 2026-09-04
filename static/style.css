@@ -11,6 +11,7 @@
   --danger: #ff6b6b;
   --hf: #ffcc4d;
   --gh: #c9d1d9;
+  --cv: #6fb3ff;
   --radius: 12px;
 }
 * { box-sizing: border-box; }
@@ -44,6 +45,16 @@ code { background: var(--panel-2); padding: 1px 5px; border-radius: 5px; font-si
 }
 .btn:disabled { opacity: .5; cursor: default; }
 .btn.ghost { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); }
+
+.tabs { display: flex; gap: 6px; padding: 14px 24px 0; border-bottom: 1px solid var(--border); margin: 0 24px; padding-left: 0; padding-right: 0; }
+.tab {
+  background: transparent; color: var(--muted); border: 0; border-bottom: 2px solid transparent;
+  padding: 8px 14px; font-size: 14px; font-weight: 600; cursor: pointer; margin-bottom: -1px;
+}
+.tab:hover { color: var(--text); }
+.tab.active { color: var(--text); border-bottom-color: var(--accent); }
+.tab small { color: var(--muted); font-weight: 400; margin-left: 6px; }
+.tab.active small { color: var(--accent); }
 
 .stats { display: flex; flex-wrap: wrap; gap: 10px; padding: 14px 24px 0; }
 .stat { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 8px 14px; min-width: 110px; }
@@ -92,6 +103,8 @@ code { background: var(--panel-2); padding: 1px 5px; border-radius: 5px; font-si
 .badge { font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 6px; letter-spacing: .3px; }
 .badge.hf { background: rgba(255, 204, 77, .15); color: var(--hf); }
 .badge.gh { background: rgba(201, 209, 217, .12); color: var(--gh); }
+.badge.cv { background: rgba(111, 179, 255, .15); color: var(--cv); }
+.badge.wf { background: rgba(91, 224, 176, .12); color: var(--accent-2); }
 .badge.new { background: var(--new); color: #1a1200; }
 .badge.found { background: var(--accent-2); color: #002a1c; }
 .badge.nsfw { background: rgba(255, 107, 107, .18); color: var(--danger); }
@@ -124,5 +137,6 @@ code { background: var(--panel-2); padding: 1px 5px; border-radius: 5px; font-si
   .status-text { text-align: left; max-width: none; }
   .list { grid-template-columns: 1fr; padding: 12px; }
   .filters, .stats, .result-count, .errors { padding-left: 12px; padding-right: 12px; margin-left: 0; margin-right: 0; }
+  .tabs { margin: 0 12px; }
   .facet { flex-direction: column; gap: 4px; }
 }

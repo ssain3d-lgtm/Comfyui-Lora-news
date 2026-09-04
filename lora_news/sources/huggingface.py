@@ -12,21 +12,27 @@ from ..models import LoraItem
 log = logging.getLogger(__name__)
 
 API_MODELS = "https://huggingface.co/api/models"
+API_DATASETS = "https://huggingface.co/api/datasets"
 
-# (추가 파라미터, 정렬) - 신규 등록 / 인기(다운로드) / 최근 수정 순으로 여러 각도에서 가져와 합친다.
-QUERIES: list[dict] = [
-    {"filter": "lora", "pipeline_tag": "text-to-image", "sort": "createdAt"},
-    {"filter": "lora", "pipeline_tag": "text-to-image", "sort": "lastModified"},
-    {"filter": "lora", "pipeline_tag": "text-to-image", "sort": "downloads"},
-    {"filter": "lora", "pipeline_tag": "text-to-image", "sort": "likes"},
-    {"filter": "lora", "pipeline_tag": "image-to-image", "sort": "createdAt"},
-    {"filter": "lora", "pipeline_tag": "image-to-image", "sort": "downloads"},
-    {"filter": "lora", "pipeline_tag": "text-to-video", "sort": "createdAt"},
-    {"filter": "lora", "pipeline_tag": "text-to-video", "sort": "downloads"},
-    {"filter": "lora", "pipeline_tag": "image-to-video", "sort": "createdAt"},
-    {"filter": "lora", "pipeline_tag": "image-to-video", "sort": "downloads"},
-    {"filter": "lora", "library": "diffusers", "sort": "createdAt"},
-    {"filter": "lora", "search": "comfyui", "sort": "createdAt"},
+# (kind, 엔드포인트, 추가 파라미터) - 신규 등록 / 인기(다운로드) / 최근 수정 순으로 여러 각도에서 가져와 합친다.
+QUERIES: list[tuple[str, str, dict]] = [
+    ("lora", API_MODELS, {"filter": "lora", "pipeline_tag": "text-to-image", "sort": "createdAt"}),
+    ("lora", API_MODELS, {"filter": "lora", "pipeline_tag": "text-to-image", "sort": "lastModified"}),
+    ("lora", API_MODELS, {"filter": "lora", "pipeline_tag": "text-to-image", "sort": "downloads"}),
+    ("lora", API_MODELS, {"filter": "lora", "pipeline_tag": "text-to-image", "sort": "likes"}),
+    ("lora", API_MODELS, {"filter": "lora", "pipeline_tag": "image-to-image", "sort": "createdAt"}),
+    ("lora", API_MODELS, {"filter": "lora", "pipeline_tag": "image-to-image", "sort": "downloads"}),
+    ("lora", API_MODELS, {"filter": "lora", "pipeline_tag": "text-to-video", "sort": "createdAt"}),
+    ("lora", API_MODELS, {"filter": "lora", "pipeline_tag": "text-to-video", "sort": "downloads"}),
+    ("lora", API_MODELS, {"filter": "lora", "pipeline_tag": "image-to-video", "sort": "createdAt"}),
+    ("lora", API_MODELS, {"filter": "lora", "pipeline_tag": "image-to-video", "sort": "downloads"}),
+    ("lora", API_MODELS, {"filter": "lora", "library": "diffusers", "sort": "createdAt"}),
+    ("lora", API_MODELS, {"filter": "lora", "search": "comfyui", "sort": "createdAt"}),
+    # 워크플로우: 이름에 comfy + workflow 가 함께 들어간 모델/데이터셋 저장소
+    ("workflow", API_MODELS, {"search": "comfyui", "sort": "lastModified"}),
+    ("workflow", API_MODELS, {"search": "workflow", "sort": "lastModified"}),
+    ("workflow", API_DATASETS, {"search": "comfyui", "sort": "lastModified"}),
+    ("workflow", API_DATASETS, {"search": "workflow", "sort": "lastModified"}),
 ]
 
 _SKIP_TAG_PREFIXES = ("base_model:", "license:", "region:", "template:", "arxiv:", "doi:", "dataset:", "language:")
@@ -39,11 +45,21 @@ def _headers(token: str = "") -> dict:
     return {"Authorization": f"Bearer {token}"} if token else {}
 
 
-def parse_model(m: dict) -> LoraItem | None:
+def is_workflow_repo(mid: str, tags: list[str]) -> bool:
+    low = (mid or "").lower()
+    tag_text = " ".join(tags).lower()
+    return "workflow" in low and ("comfy" in low or "comfy" in tag_text)
+
+
+def parse_model(m: dict, kind: str = "lora", dataset: bool = False) -> LoraItem | None:
     mid = m.get("id") or m.get("modelId")
     if not mid or m.get("private") or m.get("disabled"):
         return None
     tags = [t for t in (m.get("tags") or []) if isinstance(t, str)]
+    if kind == "workflow" and not is_workflow_repo(mid, tags):
+        return None
+    if kind == "lora" and dataset:
+        return None
     card = m.get("cardData") or {}
     if not isinstance(card, dict):
         card = {}
@@ -73,9 +89,10 @@ def parse_model(m: dict) -> LoraItem | None:
             break
 
     files = []
+    exts = (".json",) if kind == "workflow" else _WEIGHT_EXT
     for s in m.get("siblings") or []:
         fn = s.get("rfilename") if isinstance(s, dict) else None
-        if fn and fn.lower().endswith(_WEIGHT_EXT):
+        if fn and fn.lower().endswith(exts):
             files.append(fn)
     files = files[:8]
 
@@ -93,12 +110,14 @@ def parse_model(m: dict) -> LoraItem | None:
         desc_parts.append("태그: " + ", ".join(clean_tags[:20]))
 
     author = m.get("author") or mid.split("/")[0]
+    prefix = "datasets/" if dataset else ""
     return LoraItem(
-        key=f"hf:{mid}",
+        key=f"hf:{prefix}{mid}",
         source="huggingface",
+        kind=kind,
         name=mid,
         author=author,
-        url=f"https://huggingface.co/{mid}",
+        url=f"https://huggingface.co/{prefix}{mid}",
         description="\n".join(desc_parts),
         tags=clean_tags[:30],
         pipeline=m.get("pipeline_tag") or "",
@@ -119,16 +138,16 @@ def fetch(limit: int = 100, token: str = "", timeout: int = 30, workers: int = 4
     items: dict[str, LoraItem] = {}
     errors: list[str] = []
 
-    def run(q: dict):
+    def run(kind: str, endpoint: str, q: dict):
         params = dict(q)
         params.update({"direction": -1, "limit": limit, "full": "true", "cardData": "true"})
-        return q, http.get_json(API_MODELS, params=params, headers=_headers(token), timeout=timeout)
+        return kind, endpoint, http.get_json(endpoint, params=params, headers=_headers(token), timeout=timeout)
 
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        futures = [pool.submit(run, q) for q in QUERIES]
+        futures = [pool.submit(run, k, ep, q) for k, ep, q in QUERIES]
         for fut in as_completed(futures):
             try:
-                q, data = fut.result()
+                kind, endpoint, data = fut.result()
             except Exception as e:  # noqa: BLE001
                 msg = f"HuggingFace 요청 실패: {e}"
                 log.warning(msg)
@@ -139,7 +158,7 @@ def fetch(limit: int = 100, token: str = "", timeout: int = 30, workers: int = 4
                 continue
             for m in data:
                 try:
-                    item = parse_model(m)
+                    item = parse_model(m, kind=kind, dataset=(endpoint == API_DATASETS))
                 except Exception as e:  # noqa: BLE001
                     log.debug("parse error: %s", e)
                     continue
@@ -174,7 +193,7 @@ def clean_readme(text: str, max_chars: int = 1200) -> str:
 
 def fetch_readme(item: LoraItem, token: str = "", timeout: int = 20) -> tuple[str, list[str]]:
     """README 발췌와 트리거 워드를 반환. 실패하면 ('', [])."""
-    mid = item.key.split(":", 1)[1]
+    mid = item.key.split(":", 1)[1]  # "author/name" 또는 "datasets/author/name"
     url = f"https://huggingface.co/{mid}/raw/main/README.md"
     try:
         raw = http.get_text(url, headers={**_headers(token), "Accept": "text/plain"}, timeout=timeout)

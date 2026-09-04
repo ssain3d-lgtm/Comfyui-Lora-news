@@ -9,6 +9,7 @@ from datetime import datetime, timedelta, timezone
 from .classify import classify
 from .config import Config
 from .models import LoraItem
+from .sources import civitai as cv_source
 from .sources import github as gh_source
 from .sources import huggingface as hf_source
 from .store import Store
@@ -35,13 +36,16 @@ def _parse_dt(value: str) -> datetime | None:
 
 class NewsService:
     def __init__(self, config: Config | None = None, store: Store | None = None,
-                 hf_fetch=None, gh_fetch=None, readme_enricher=None, summarizer=None):
+                 hf_fetch=None, gh_fetch=None, cv_fetch=None, readme_enricher=None, summarizer=None):
         self.config = config or Config()
         self.store = store or Store(self.config.data_dir)
         self._hf_fetch = hf_fetch or (lambda: hf_source.fetch(
             limit=self.config.hf_limit, token=self.config.hf_token, timeout=self.config.http_timeout))
         self._gh_fetch = gh_fetch or (lambda: gh_source.fetch(
             per_page=self.config.gh_per_page, token=self.config.github_token, timeout=self.config.http_timeout))
+        self._cv_fetch = cv_fetch or (lambda: cv_source.fetch(
+            limit=self.config.civitai_limit, token=self.config.civitai_token, timeout=self.config.http_timeout,
+            nsfw=self.config.civitai_nsfw))
         self._readme_enricher = readme_enricher or (lambda items: hf_source.enrich_with_readmes(
             items, token=self.config.hf_token, timeout=min(self.config.http_timeout, 20)))
         self._summarizer = summarizer
@@ -100,22 +104,24 @@ class NewsService:
         self.status["errors"] = []
         self.status["last_error"] = None
         started = _now()
-        self._set_progress("Hugging Face / GitHub 에서 목록 가져오는 중…")
+        self._set_progress("Hugging Face / GitHub / Civitai 에서 목록 가져오는 중…")
 
-        with ThreadPoolExecutor(max_workers=2) as pool:
+        with ThreadPoolExecutor(max_workers=3) as pool:
             hf_fut = pool.submit(self._hf_fetch)
             gh_fut = pool.submit(self._gh_fetch)
+            cv_fut = pool.submit(self._cv_fetch)
             hf_items, hf_errors = self._safe_result(hf_fut, "HuggingFace")
             gh_items, gh_errors = self._safe_result(gh_fut, "GitHub")
-        errors = list(hf_errors) + list(gh_errors)
+            cv_items, cv_errors = self._safe_result(cv_fut, "Civitai")
+        errors = list(hf_errors) + list(gh_errors) + list(cv_errors)
 
         previous = {it.key: it for it in self.items}
         fetched: dict[str, LoraItem] = {}
-        for it in hf_items + gh_items:
+        for it in hf_items + gh_items + cv_items:
             fetched.setdefault(it.key, it)
 
         # 소스 전체가 실패했으면 이전 캐시의 해당 소스 항목을 유지한다.
-        for source, got in (("huggingface", hf_items), ("github", gh_items)):
+        for source, got in (("huggingface", hf_items), ("github", gh_items), ("civitai", cv_items)):
             if not got:
                 kept = [it for it in previous.values() if it.source == source]
                 if kept:
@@ -229,28 +235,39 @@ class NewsService:
 
     @staticmethod
     def _counts(items: list[LoraItem]) -> dict:
-        return {
-            "total": len(items),
-            "huggingface": sum(1 for it in items if it.source == "huggingface"),
-            "github": sum(1 for it in items if it.source == "github"),
-            "new": sum(1 for it in items if it.is_new),
-            "found_this_run": sum(1 for it in items if it.found_this_run),
-            "claude": sum(1 for it in items if it.summary_source == "claude"),
-        }
+        def block(subset: list[LoraItem]) -> dict:
+            return {
+                "total": len(subset),
+                "huggingface": sum(1 for it in subset if it.source == "huggingface"),
+                "github": sum(1 for it in subset if it.source == "github"),
+                "civitai": sum(1 for it in subset if it.source == "civitai"),
+                "new": sum(1 for it in subset if it.is_new),
+                "found_this_run": sum(1 for it in subset if it.found_this_run),
+                "claude": sum(1 for it in subset if it.summary_source == "claude"),
+            }
+
+        counts = block(items)
+        counts["lora"] = block([it for it in items if it.kind == "lora"])
+        counts["workflow"] = block([it for it in items if it.kind == "workflow"])
+        return counts
 
     # ------------------------------------------------------------------
     def snapshot(self) -> dict:
-        items = [it.to_dict() for it in self.items]
-        base_models: dict[str, int] = {}
-        categories: dict[str, int] = {}
-        for it in self.items:
-            base_models[it.base_model] = base_models.get(it.base_model, 0) + 1
-            categories[it.category] = categories.get(it.category, 0) + 1
-        return {
-            "status": self.status,
-            "items": items,
-            "facets": {
+        facets = {}
+        for kind in ("lora", "workflow"):
+            base_models: dict[str, int] = {}
+            categories: dict[str, int] = {}
+            for it in self.items:
+                if it.kind != kind:
+                    continue
+                base_models[it.base_model] = base_models.get(it.base_model, 0) + 1
+                categories[it.category] = categories.get(it.category, 0) + 1
+            facets[kind] = {
                 "base_models": sorted(base_models.items(), key=lambda kv: -kv[1]),
                 "categories": sorted(categories.items(), key=lambda kv: -kv[1]),
-            },
+            }
+        return {
+            "status": self.status,
+            "items": [it.to_dict() for it in self.items],
+            "facets": facets,
         }

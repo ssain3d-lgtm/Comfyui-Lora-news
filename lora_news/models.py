@@ -5,13 +5,14 @@ from dataclasses import asdict, dataclass, field, fields
 
 @dataclass
 class LoraItem:
-    """하나의 LoRA(또는 LoRA 관련 GitHub 저장소) 항목."""
+    """하나의 LoRA / ComfyUI 워크플로우 / 관련 GitHub 저장소 항목."""
 
-    key: str                      # "hf:author/name" 또는 "gh:owner/repo"
-    source: str                   # "huggingface" | "github"
+    key: str                      # "hf:author/name", "gh:owner/repo", "civitai:12345"
+    source: str                   # "huggingface" | "github" | "civitai"
     name: str
     author: str
     url: str
+    kind: str = "lora"            # "lora" | "workflow"
     description: str = ""         # 원문(영문) 설명 / 모델 카드 발췌
     tags: list = field(default_factory=list)
     pipeline: str = ""            # text-to-image, image-to-video ...
