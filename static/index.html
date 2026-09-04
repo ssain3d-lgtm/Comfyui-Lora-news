@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LoRA 뉴스</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <span class="logo">◆</span>
+    <div>
+      <h1>LoRA 뉴스</h1>
+      <div class="sub">ComfyUI용 LoRA · Hugging Face + GitHub 신규/기존 모아보기</div>
+    </div>
+  </div>
+  <div class="status">
+    <span id="status-text" class="status-text">불러오는 중…</span>
+    <button id="refresh-btn" class="btn">새로고침</button>
+  </div>
+</header>
+
+<section class="stats" id="stats"></section>
+
+<section class="filters">
+  <div class="row">
+    <input id="search" class="search" type="search" placeholder="검색: 이름, 태그, 설명, 트리거 워드…" autocomplete="off">
+    <select id="sort" class="select" title="정렬">
+      <option value="new">신규 우선</option>
+      <option value="created">등록일 최신순</option>
+      <option value="updated">수정일 최신순</option>
+      <option value="downloads">다운로드 많은순</option>
+      <option value="likes">좋아요/스타 많은순</option>
+      <option value="name">이름순</option>
+    </select>
+    <select id="group" class="select" title="묶어보기">
+      <option value="none">묶기: 없음</option>
+      <option value="category">묶기: 용도별</option>
+      <option value="base_model">묶기: 베이스 모델별</option>
+      <option value="source">묶기: 소스별</option>
+    </select>
+  </div>
+  <div class="row wrap">
+    <div class="chips" id="source-chips"></div>
+    <label class="check"><input type="checkbox" id="only-new"> 신규만</label>
+    <label class="check"><input type="checkbox" id="recent7"> 최근 7일 등록</label>
+    <label class="check"><input type="checkbox" id="hide-nsfw" checked> NSFW 숨기기</label>
+  </div>
+  <div class="facet"><span class="facet-label">베이스 모델</span><div class="chips" id="base-chips"></div></div>
+  <div class="facet"><span class="facet-label">용도</span><div class="chips" id="cat-chips"></div></div>
+</section>
+
+<div id="errors" class="errors" hidden></div>
+<div id="result-count" class="result-count"></div>
+<main id="list" class="list"></main>
+
+<footer class="foot">
+  데이터: <a href="https://huggingface.co/models?other=lora" target="_blank" rel="noopener">Hugging Face</a> ·
+  <a href="https://github.com/search?q=comfyui+lora" target="_blank" rel="noopener">GitHub</a> ·
+  한글 요약은 규칙 기반이며 <code>ANTHROPIC_API_KEY</code> 설정 시 Claude가 더 자연스럽게 작성합니다.
+</footer>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

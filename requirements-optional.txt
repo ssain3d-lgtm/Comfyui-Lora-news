@@ -1,0 +1,2 @@
+# 선택: Claude 한글 요약을 쓰려면 설치 (ANTHROPIC_API_KEY 필요)
+anthropic>=0.60
