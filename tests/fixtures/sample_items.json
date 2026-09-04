@@ -490,5 +490,55 @@
    "flux_dev_basic.json",
    "wan22_t2v.json"
   ]
+ },
+ {
+  "key": "civitai:1004",
+  "source": "civitai",
+  "kind": "lora",
+  "name": "Hailuo 3 Slow Orbit Camera",
+  "author": "someone",
+  "url": "https://civitai.com/models/1004",
+  "pipeline": "text-to-video",
+  "base_model_raw": "MiniMax H3",
+  "tags": [
+   "minimax",
+   "video",
+   "camera"
+  ],
+  "description": "최신 버전: v1 · 베이스: MiniMax H3\nSlow orbit camera motion LoRA for MiniMax H3 (Hailuo 3) video generation.",
+  "trigger_words": [
+   "slow orbit"
+  ],
+  "created_at": "2026-09-04T06:00:00.000Z",
+  "updated_at": "2026-09-04T06:00:00.000Z",
+  "downloads": 210,
+  "likes": 30,
+  "files": [
+   "hailuo3_slow_orbit.safetensors"
+  ]
+ },
+ {
+  "key": "hf:someone/krea2-oil-painting-lora",
+  "source": "huggingface",
+  "kind": "lora",
+  "name": "someone/krea2-oil-painting-lora",
+  "author": "someone",
+  "url": "https://huggingface.co/someone/krea2-oil-painting-lora",
+  "pipeline": "text-to-image",
+  "base_model_raw": "krea/krea-2",
+  "tags": [
+   "krea",
+   "style",
+   "oil painting"
+  ],
+  "description": "Oil painting style LoRA trained for Krea 2. Trigger words: kr2 oil",
+  "trigger_words": [],
+  "created_at": "2026-09-04T07:00:00.000Z",
+  "updated_at": "2026-09-04T07:00:00.000Z",
+  "downloads": 80,
+  "likes": 6,
+  "files": [
+   "krea2_oil.safetensors"
+  ]
  }
 ]

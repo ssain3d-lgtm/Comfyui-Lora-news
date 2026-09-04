@@ -42,6 +42,10 @@ def _any(text: str, keywords: Iterable[str]) -> bool:
 # ---------------------------------------------------------------------------
 
 BASE_MODEL_RULES: list[tuple[str, list[str]]] = [
+    # 'flux-krea-dev'(FLUX.1 Krea) 와 구분하기 위해 Krea 2 는 '2' 가 붙은 표기만 잡는다
+    ("Krea 2", ["krea 2", "krea-2", "krea2", "krea_2", "krea 2.0", "krea-2.0", "krea2.0", "krea v2", "krea-v2"]),
+    ("MiniMax H3", ["minimax h3", "minimax-h3", "minimax_h3", "minimaxh3", "hailuo 3", "hailuo-3", "hailuo3", "hailuo 03",
+                    "hailuo-03", "hailuo03", "minimax", "hailuo"]),
     ("FLUX Kontext", ["kontext"]),
     ("FLUX.2", ["flux.2", "flux2", "flux-2", "flux_2"]),
     ("FLUX.1", ["flux", "flux.1", "flux1", "flux-dev", "flux-schnell", "flux.1-dev", "flux.1-schnell", "flux-fill", "flux-krea"]),
@@ -71,7 +75,7 @@ BASE_MODEL_RULES: list[tuple[str, list[str]]] = [
     ("SD 1.5", ["stable-diffusion-v1-5", "stable-diffusion-v1", "sd1.5", "sd-1.5", "sd15", "sd-1-5", "runwayml", "dreamshaper", "v1-5", "sd1", "sd 1.5"]),
 ]
 
-VIDEO_BASES = {"Wan 2.x (비디오)", "HunyuanVideo", "LTX-Video", "CogVideoX", "Mochi", "AnimateDiff", "Stable Video Diffusion"}
+VIDEO_BASES = {"Wan 2.x (비디오)", "HunyuanVideo", "LTX-Video", "CogVideoX", "Mochi", "AnimateDiff", "Stable Video Diffusion", "MiniMax H3"}
 
 
 def detect_base_model(item: LoraItem) -> str:
@@ -145,6 +149,7 @@ GH_CATEGORY_RULES: list[tuple[str, list[str]]] = [
 
 WF_CATEGORY_RULES: list[tuple[str, list[str]]] = [
     ("WF 영상 생성", ["video", "wan", "wan2", "wan2.1", "wan2.2", "hunyuanvideo", "hunyuan video", "ltx", "ltxv", "animatediff", "i2v",
+                   "minimax", "hailuo",
                    "t2v", "animate", "animation", "svd", "cogvideo", "mochi", "framepack", "img2vid", "image-to-video", "text-to-video",
                    "vace", "motion", "frame interpolation", "rife"]),
     ("WF 편집/인페인팅", ["inpaint", "inpainting", "outpaint", "outpainting", "edit", "editing", "kontext", "qwen-image-edit", "qwen image edit",

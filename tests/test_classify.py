@@ -33,9 +33,31 @@ class ClassifyTests(unittest.TestCase):
             "civitai:1001": "SDXL",
             "civitai:1002": "Illustrious (SDXL 계열)",
             "civitai:1003": "Wan 2.x (비디오)",
+            "civitai:1004": "MiniMax H3",
+            "hf:someone/krea2-oil-painting-lora": "Krea 2",
         }
         for key, base in expect.items():
             self.assertEqual(self.items[key].base_model, base, key)
+
+    def test_minimax_and_krea2_rules(self):
+        def base(name, raw="", desc=""):
+            it = LoraItem(key="hf:" + name, source="huggingface", name=name, author="a", url="", base_model_raw=raw, description=desc)
+            return classify(it).base_model
+
+        self.assertEqual(base("a/minimax-h3-dance"), "MiniMax H3")
+        self.assertEqual(base("a/dance-lora", raw="MiniMax H3"), "MiniMax H3")
+        self.assertEqual(base("a/dance-lora", desc="Trained on Hailuo 3 clips"), "MiniMax H3")
+        self.assertEqual(base("a/krea2-style"), "Krea 2")
+        self.assertEqual(base("a/style", raw="Krea 2.0"), "Krea 2")
+        self.assertEqual(base("a/style", raw="krea/krea-2"), "Krea 2")
+        # FLUX.1 Krea 는 여전히 FLUX.1
+        self.assertEqual(base("a/style", raw="black-forest-labs/FLUX.1-Krea-dev"), "FLUX.1")
+        self.assertEqual(base("a/flux-krea-portrait"), "FLUX.1")
+        # MiniMax H3 는 비디오 베이스: 카메라 LoRA 는 영상 모션 분류
+        self.assertEqual(self.items["civitai:1004"].category, "영상 모션/카메라")
+        self.assertIn("카메라 무빙(오빗/돌리/줌)", self.items["civitai:1004"].hints)
+        self.assertEqual(self.items["hf:someone/krea2-oil-painting-lora"].category, "스타일/화풍")
+        self.assertEqual(self.items["hf:someone/krea2-oil-painting-lora"].trigger_words, ["kr2 oil"])
 
     def test_categories(self):
         expect = {

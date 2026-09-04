@@ -4,7 +4,7 @@
 
 A local web app that, every time you run it, pulls the latest **LoRAs** and **ComfyUI workflows** from
 **Hugging Face**, **GitHub** and **Civitai**, flags what is **new**, sorts everything by base model
-(FLUX / SDXL / Pony / Illustrious / Wan / …) and purpose (style · character · realistic · speed-up ·
+(FLUX / SDXL / Pony / Illustrious / Wan / Krea 2 / MiniMax H3 / …) and purpose (style · character · realistic · speed-up ·
 image editing · video motion · training tools …), and shows a one-line summary plus trigger words for each item.
 The UI switches between **English and Korean** with one click.
 
@@ -143,7 +143,7 @@ docs/                   # screenshots
 ## 한국어
 
 실행할 때마다 **Hugging Face**, **GitHub**, **Civitai**에서 LoRA와 ComfyUI 워크플로우의 최신 목록을 받아와,
-**신규 항목**과 **기존 항목**을 베이스 모델(FLUX / SDXL / Pony / Illustrious / Wan / …)과
+**신규 항목**과 **기존 항목**을 베이스 모델(FLUX / SDXL / Pony / Illustrious / Wan / Krea 2 / MiniMax H3 / …)과
 용도(스타일 · 캐릭터 · 실사 · 가속 · 이미지 편집 · 영상 모션 · 학습 도구 …)별로 나누고,
 각 항목에 **한 줄 요약**과 **트리거 워드**를 붙여 브라우저에서 보여주는 로컬 웹앱입니다.
 화면 상단의 **EN / 한국어** 버튼으로 영문·한글 표시를 전환하고, **LoRA / 워크플로우** 탭으로 종류를 전환합니다.
