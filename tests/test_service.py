@@ -86,13 +86,19 @@ class ServiceTests(unittest.TestCase):
             def boom():
                 raise RuntimeError("network down")
 
-            svc = make_service(tmp, boom, lambda: (gh, []), lambda: ([], ["Civitai 접근 거부(403)"]))
+            from lora_news.i18n import msg
+            svc = make_service(tmp, boom, lambda: (gh, []), lambda: ([], [msg("cv_forbidden")]))
             counts = svc.refresh()
             self.assertEqual(counts["huggingface"], len(hf))
             self.assertEqual(counts["civitai"], len(cv))
-            self.assertTrue(any("HuggingFace 수집 실패" in e for e in svc.status["errors"]))
-            self.assertTrue(any("Civitai 접근 거부" in e for e in svc.status["errors"]))
-            self.assertEqual(sum(1 for e in svc.status["errors"] if "이전 캐시" in e), 2)
+            errs = svc.status["errors"]
+            self.assertTrue(all(isinstance(e, dict) and e.get("ko") and e.get("en") for e in errs), errs)
+            self.assertTrue(any(e["key"] == "source_failed" and "Hugging Face 수집 실패" in e["ko"] for e in errs))
+            self.assertTrue(any(e["key"] == "kept_cache" and e["ko"].startswith("Hugging Face ") for e in errs))
+            self.assertTrue(any("Hugging Face fetch failed" in e["en"] for e in errs))
+            self.assertTrue(any(e["key"] == "cv_forbidden" for e in errs))
+            self.assertEqual(sum(1 for e in errs if e["key"] == "kept_cache"), 2)
+            self.assertIsNone(svc.status["progress"])
 
     def test_claude_summaries_applied_and_kept(self):
         items = fixture_items()
@@ -105,6 +111,8 @@ class ServiceTests(unittest.TestCase):
             self.assertEqual(sum(1 for d in snap["items"] if d["summary_source"] == "claude"), 2)
             self.assertIn("base_models", snap["facets"]["lora"])
             self.assertIn("categories", snap["facets"]["workflow"])
+            self.assertEqual(snap["labels_en"]["categories"]["스타일/화풍"], "Style/art style")
+            self.assertTrue(all(d["summary_en"] for d in snap["items"]), "모든 항목에 영문 요약")
             # 다음 실행에서 Claude 요약이 규칙 요약으로 덮이지 않음
             svc2 = make_service(tmp, lambda: (hf, []), lambda: ([], []), summarizer=None)
             svc2.refresh()

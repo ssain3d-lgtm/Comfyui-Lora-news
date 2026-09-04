@@ -54,11 +54,11 @@ class SummarizerTests(unittest.TestCase):
     def test_summarize_applies_and_caches(self):
         with tempfile.TemporaryDirectory() as tmp:
             reply = {"items": [
-                {"key": "hf:a/b", "summary_ko": "FLUX용 스타일 LoRA", "category": "스타일/화풍"},
-                {"key": "hf:c/d", "summary_ko": "SDXL 캐릭터 LoRA", "category": "캐릭터"},
-                {"key": "gh:e/f", "summary_ko": "학습 스크립트", "category": "학습 도구"},
-                {"key": "civitai:9", "summary_ko": "기본 FLUX 워크플로우", "category": "WF 이미지 생성"},
-                {"key": "hf:zzz", "summary_ko": "무시됨", "category": "기타"},
+                {"key": "hf:a/b", "summary_ko": "FLUX용 스타일 LoRA", "summary_en": "Style LoRA for FLUX", "category": "스타일/화풍"},
+                {"key": "hf:c/d", "summary_ko": "SDXL 캐릭터 LoRA", "summary_en": "SDXL character LoRA", "category": "캐릭터"},
+                {"key": "gh:e/f", "summary_ko": "학습 스크립트", "summary_en": "Training scripts", "category": "학습 도구"},
+                {"key": "civitai:9", "summary_ko": "기본 FLUX 워크플로우", "summary_en": "Basic FLUX workflow", "category": "WF 이미지 생성"},
+                {"key": "hf:zzz", "summary_ko": "무시됨", "summary_en": "ignored", "category": "기타"},
             ]}
             s, stub = self.make(tmp, reply)
             its = self.items()
@@ -76,11 +76,13 @@ class SummarizerTests(unittest.TestCase):
             self.assertEqual(call["fallbacks"], "default")
             self.assertIn("server-side-fallback-2026-07-01", call["betas"])
             self.assertEqual(call["output_config"]["format"]["type"], "json_schema")
+            self.assertIn("summary_en", call["output_config"]["format"]["schema"]["properties"]["items"]["items"]["required"])
             # 신규 항목이 먼저 요약됨
             first_keys = [i["key"] for i in json.loads(call["messages"][0]["content"].split("\n\n", 1)[1])["items"]]
             self.assertEqual(first_keys[0], "hf:a/b")
             by = {i.key: i for i in its}
             self.assertEqual(by["hf:a/b"].summary_ko, "FLUX용 스타일 LoRA")
+            self.assertEqual(by["hf:a/b"].summary_en, "Style LoRA for FLUX")
             self.assertEqual(by["hf:a/b"].category, "스타일/화풍")
             self.assertEqual(by["gh:e/f"].summary_source, "claude")
             cache = json.loads((Path(tmp) / "summaries.json").read_text(encoding="utf-8"))
@@ -90,6 +92,7 @@ class SummarizerTests(unittest.TestCase):
             s2, stub2 = self.make(tmp, {"items": []})
             fresh = self.items()
             self.assertEqual(s2.apply_cached(fresh), 4)
+            self.assertEqual(next(i for i in fresh if i.key == "gh:e/f").summary_en, "Training scripts")
             n2, _ = s2.summarize(fresh)
             self.assertEqual(n2, 0)
             self.assertEqual(stub2.calls, [])
@@ -99,7 +102,9 @@ class SummarizerTests(unittest.TestCase):
             s, _ = self.make(tmp, {"items": []}, stop_reason="refusal")
             n, errors = s.summarize(self.items())
             self.assertEqual(n, 0)
-            self.assertTrue(errors and "거절" in errors[0])
+            self.assertTrue(errors and "거절" in errors[0]["ko"], errors)
+            self.assertIn("declined", errors[0]["en"])
+            self.assertEqual(errors[0]["key"], "claude_failed")
 
 
 if __name__ == "__main__":

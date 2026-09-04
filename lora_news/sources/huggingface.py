@@ -6,6 +6,7 @@ import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from .. import http
+from ..i18n import msg
 from ..classify import extract_trigger_words
 from ..models import LoraItem
 
@@ -133,10 +134,10 @@ def parse_model(m: dict, kind: str = "lora", dataset: bool = False) -> LoraItem 
     )
 
 
-def fetch(limit: int = 100, token: str = "", timeout: int = 30, workers: int = 4) -> tuple[list[LoraItem], list[str]]:
+def fetch(limit: int = 100, token: str = "", timeout: int = 30, workers: int = 4) -> tuple[list[LoraItem], list[dict]]:
     """여러 쿼리를 병렬로 호출해 중복 제거된 LoRA 목록을 반환. (items, errors)"""
     items: dict[str, LoraItem] = {}
-    errors: list[str] = []
+    errors: list[dict] = []
 
     def run(kind: str, endpoint: str, q: dict):
         params = dict(q)
@@ -149,12 +150,11 @@ def fetch(limit: int = 100, token: str = "", timeout: int = 30, workers: int = 4
             try:
                 kind, endpoint, data = fut.result()
             except Exception as e:  # noqa: BLE001
-                msg = f"HuggingFace 요청 실패: {e}"
-                log.warning(msg)
-                errors.append(msg)
+                log.warning("HuggingFace 요청 실패: %s", e)
+                errors.append(msg("hf_failed", err=e))
                 continue
             if not isinstance(data, list):
-                errors.append(f"HuggingFace 응답 형식 오류: {str(data)[:120]}")
+                errors.append(msg("hf_bad_response", body=str(data)[:120]))
                 continue
             for m in data:
                 try:

@@ -205,7 +205,7 @@ HINT_RULES: list[tuple[str, list[str]]] = [
     ("적은 스텝(4~8)으로 빠르게 생성", ["lightning", "lcm", "turbo", "hyper", "dmd", "distill", "distilled", "4-step", "8-step", "few-step", "causvid", "self-forcing", "lightx2v", "accvid"]),
     ("이미지 편집·변형 지시용", ["kontext", "edit", "editing", "instruct"]),
     ("가상 피팅/의상 교체", ["try-on", "tryon", "virtual try", "outfit swap"]),
-    ("배경/객체 제거", ["remove", "removal"]),
+    ("배경/객체 제거", ["remove background", "background removal", "object removal", "remove object", "remover", "removal", "rembg"]),
     ("조명 재설정", ["relight", "relighting"]),
     ("손상 복원/흑백 채색", ["restore", "restoration", "colorize", "colorization"]),
     ("업스케일/화질 개선", ["upscale", "upscaler", "super-resolution"]),
@@ -374,12 +374,175 @@ CATEGORY_PURPOSE = {
 }
 
 
+# ---------------------------------------------------------------------------
+# 영문 라벨 (프론트엔드의 EN 모드와 summary_en 에 사용)
+# ---------------------------------------------------------------------------
+
+BASE_MODEL_EN = {
+    "Wan 2.x (비디오)": "Wan 2.x (video)",
+    "Hunyuan (이미지)": "Hunyuan (image)",
+    "Pony (SDXL 계열)": "Pony (SDXL family)",
+    "Illustrious (SDXL 계열)": "Illustrious (SDXL family)",
+    "Animagine (SDXL 계열)": "Animagine (SDXL family)",
+    "비디오 모델 (미상)": "Video model (unknown)",
+    "미상/기타": "Unknown/other",
+    "범용/도구": "General/tooling",
+    "범용/미상": "General/unspecified",
+}
+
+CATEGORY_EN = {
+    "가속 (저스텝)": "Speed-up (few-step)",
+    "이미지 편집": "Image editing",
+    "디테일 향상": "Detail enhancer",
+    "영상 모션/카메라": "Video motion/camera",
+    "캐릭터": "Character",
+    "실사/포토": "Realistic/photo",
+    "의상/포즈/컨셉": "Outfit/pose/concept",
+    "스타일/화풍": "Style/art style",
+    "기타": "Other",
+    "학습 도구": "Training tool",
+    "커스텀 노드": "Custom node",
+    "로더/관리": "Loader/manager",
+    "병합/변환": "Merge/convert",
+    "자료 모음": "Resource list",
+    "모델/가중치": "Model/weights",
+    "WF 이미지 생성": "WF Image generation",
+    "WF 영상 생성": "WF Video generation",
+    "WF 편집/인페인팅": "WF Editing/inpainting",
+    "WF 업스케일/보정": "WF Upscale/fix",
+    "WF 컨트롤넷/포즈": "WF ControlNet/pose",
+    "WF 캐릭터 일관성": "WF Character consistency",
+    "WF 학습/도구": "WF Training/tools",
+    "WF 모음/템플릿": "WF Collection/templates",
+}
+
+CATEGORY_PURPOSE_EN = {
+    "가속 (저스텝)": "speeds up generation with fewer steps",
+    "이미지 편집": "edits or transforms an existing image by instruction",
+    "디테일 향상": "helper that boosts detail and image quality",
+    "영상 모션/카메라": "adds motion or camera moves to video generation",
+    "캐릭터": "reproduces a specific person or character",
+    "실사/포토": "produces photo-realistic results",
+    "의상/포즈/컨셉": "renders a specific outfit, pose, object or concept",
+    "스타일/화풍": "applies a specific art style or mood",
+    "기타": "uncategorised",
+    "학습 도구": "LoRA training tool",
+    "커스텀 노드": "ComfyUI custom node",
+    "로더/관리": "LoRA loading/management/preview tool",
+    "병합/변환": "LoRA merge/extract/convert tool",
+    "자료 모음": "collection of LoRA resources",
+    "모델/가중치": "repository publishing LoRA weights",
+    "WF 이미지 생성": "ComfyUI workflow for text-to-image generation",
+    "WF 영상 생성": "ComfyUI workflow for video generation",
+    "WF 편집/인페인팅": "ComfyUI workflow for image editing/inpainting",
+    "WF 업스케일/보정": "ComfyUI workflow for upscaling and detail fixes",
+    "WF 컨트롤넷/포즈": "ComfyUI workflow driven by ControlNet/pose/reference images",
+    "WF 캐릭터 일관성": "ComfyUI workflow for consistent characters/faces",
+    "WF 학습/도구": "ComfyUI workflow for training, batching or utilities",
+    "WF 모음/템플릿": "collection of ComfyUI workflow templates",
+}
+
+HINT_EN = {
+    "적은 스텝(4~8)으로 빠르게 생성": "fast 4-8 step generation",
+    "이미지 편집·변형 지시용": "instruction-based image editing",
+    "가상 피팅/의상 교체": "virtual try-on / outfit swap",
+    "배경/객체 제거": "background/object removal",
+    "조명 재설정": "relighting",
+    "손상 복원/흑백 채색": "restoration / colorisation",
+    "업스케일/화질 개선": "upscaling / quality boost",
+    "디테일·선명도 향상": "more detail and sharpness",
+    "손/눈 보정": "hand/eye fixes",
+    "피부 질감 강화": "skin texture",
+    "사실적인 실사 표현": "photo-realistic look",
+    "아마추어/스냅 사진 느낌": "amateur/snapshot feel",
+    "필름/아날로그 사진 감성": "film/analog photo feel",
+    "영화 같은 색감·조명": "cinematic colour and lighting",
+    "인물 초상/얼굴": "portraits/faces",
+    "특정 인물/캐릭터 재현": "specific person/character likeness",
+    "애니메이션 화풍": "anime style",
+    "지브리풍": "Ghibli-like",
+    "만화/코믹 스타일": "manga/comic style",
+    "카툰/툰 렌더": "cartoon/toon render",
+    "수채화 느낌": "watercolour look",
+    "유화 느낌": "oil painting look",
+    "스케치·선화": "sketch/line art",
+    "픽셀아트": "pixel art",
+    "3D 렌더 느낌": "3D render look",
+    "치비 스타일": "chibi style",
+    "플랫/벡터 일러스트": "flat/vector illustration",
+    "빈티지·레트로": "vintage/retro",
+    "사이버펑크/네온": "cyberpunk/neon",
+    "판타지/중세": "fantasy/medieval",
+    "고딕/다크": "gothic/dark",
+    "파스텔톤": "pastel tones",
+    "스팀펑크": "steampunk",
+    "초현실/추상": "surreal/abstract",
+    "아이소메트릭/로우폴리": "isometric/low-poly",
+    "레고/블록 스타일": "LEGO/brick style",
+    "종이공예/오리가미": "papercraft/origami",
+    "자수/니트 질감": "embroidery/knit texture",
+    "의상/코스튬": "outfits/costumes",
+    "헤어스타일": "hairstyles",
+    "포즈/자세": "poses",
+    "표정": "expressions",
+    "배경/환경": "backgrounds/environments",
+    "건축/인테리어": "architecture/interiors",
+    "풍경": "landscapes",
+    "자동차/탈것": "cars/vehicles",
+    "로봇/메카": "robots/mecha",
+    "몬스터/크리처": "monsters/creatures",
+    "동물": "animals",
+    "음식 사진": "food photography",
+    "제품 사진": "product shots",
+    "로고 디자인": "logo design",
+    "타투 디자인": "tattoo design",
+    "글자/타이포그래피": "text/typography",
+    "스티커/아이콘": "stickers/icons",
+    "패턴/텍스처": "patterns/textures",
+    "포스터/커버 아트": "poster/cover art",
+    "카메라 무빙(오빗/돌리/줌)": "camera moves (orbit/dolly/zoom)",
+    "이미지→비디오(I2V)": "image-to-video (I2V)",
+    "텍스트→비디오(T2V)": "text-to-video (T2V)",
+    "춤/동작": "dance/movement",
+    "폭발/파괴 효과": "explosion/destruction effects",
+    "물리/변형 효과": "physics/deformation effects",
+    "타임랩스/드론 샷": "timelapse/drone shots",
+    "루프 애니메이션": "looping animation",
+    "성인(NSFW)": "adult (NSFW)",
+    "ControlNet 사용": "uses ControlNet",
+    "IPAdapter/Redux 스타일 참조": "IPAdapter/Redux style reference",
+    "얼굴 일관성(PuLID/InstantID/FaceID)": "face consistency (PuLID/InstantID/FaceID)",
+    "얼굴 교체(ReActor)": "face swap (ReActor)",
+    "인페인팅/아웃페인팅": "inpainting/outpainting",
+    "배경 제거/교체": "background removal/replacement",
+    "업스케일 포함": "includes upscaling",
+    "얼굴/디테일 보정(Detailer)": "face/detail fixing (Detailer)",
+    "프레임 보간": "frame interpolation",
+    "LoRA 스택/여러 LoRA 사용": "LoRA stacking",
+    "GGUF/저사양(VRAM 절약)": "GGUF / low VRAM",
+    "배치/자동화": "batch/automation",
+    "API/외부 연동": "API/external integration",
+    "초보자용/기본 템플릿": "beginner-friendly template",
+    "고급/올인원": "advanced / all-in-one",
+}
+
+
+def base_model_label(label: str, lang: str = "ko") -> str:
+    return BASE_MODEL_EN.get(label, label) if lang == "en" else label
+
+
+def category_label(label: str, lang: str = "ko") -> str:
+    return CATEGORY_EN.get(label, label) if lang == "en" else label
+
+
 def _short_desc(text: str, n: int = 140) -> str:
     text = (text or "").strip().replace("\n", " ")
     return text[:n] + ("…" if len(text) > n else "")
 
 
-def build_rule_summary(item: LoraItem) -> str:
+def build_rule_summary(item: LoraItem, lang: str = "ko") -> str:
+    if lang == "en":
+        return _build_summary_en(item)
     purpose = CATEGORY_PURPOSE.get(item.category, "")
     hints = [h for h in item.hints if h != "성인(NSFW)"]
 
@@ -420,6 +583,53 @@ def build_rule_summary(item: LoraItem) -> str:
     return " · ".join(parts)
 
 
+_GENERIC_BASES = ("미상/기타", "비디오 모델 (미상)", "범용/도구", "범용/미상")
+
+
+def _build_summary_en(item: LoraItem) -> str:
+    purpose = CATEGORY_PURPOSE_EN.get(item.category, "")
+    hints = [HINT_EN.get(h, h) for h in item.hints if h != "성인(NSFW)"]
+    base = base_model_label(item.base_model, "en")
+    cat = category_label(item.category, "en")
+
+    if item.kind == "workflow":
+        head = purpose or "ComfyUI workflow"
+        if item.base_model not in _GENERIC_BASES:
+            head = f"{base} {head}"
+        head = head[0].upper() + head[1:]
+        parts = [head]
+        if hints:
+            parts.append(", ".join(hints))
+        if item.files:
+            parts.append(f"{len(item.files)} JSON file{'s' if len(item.files) != 1 else ''}")
+        if item.description and item.source == "github":
+            parts.append(_short_desc(item.description))
+        if item.nsfw:
+            parts.append("NSFW tag")
+        return " · ".join(parts)
+
+    if item.source == "github":
+        parts = [f"GitHub · {cat}"]
+        if purpose:
+            parts.append(purpose)
+        if hints:
+            parts.append(", ".join(hints))
+        if item.description:
+            parts.append(_short_desc(item.description))
+        return " · ".join(parts)
+
+    parts = [f"{cat} LoRA for {base}"]
+    if hints:
+        parts.append(", ".join(hints))
+    elif purpose:
+        parts.append(purpose)
+    if item.trigger_words:
+        parts.append("Trigger: " + ", ".join(item.trigger_words[:3]))
+    if item.nsfw:
+        parts.append("NSFW tag")
+    return " · ".join(parts)
+
+
 def classify(item: LoraItem) -> LoraItem:
     """항목을 제자리에서 분류하고 규칙 기반 요약을 채운다 (Claude 요약이 있으면 덮어쓰지 않음)."""
     if item.kind not in ("lora", "workflow"):
@@ -438,8 +648,10 @@ def classify(item: LoraItem) -> LoraItem:
     if not item.nsfw and _any(text, ["nsfw", "not-for-all-audiences", "explicit", "hentai"]):
         item.nsfw = True
     if item.summary_source != "claude" or not item.summary_ko:
-        item.summary_ko = build_rule_summary(item)
+        item.summary_ko = build_rule_summary(item, "ko")
         item.summary_source = "rule"
+    if item.summary_source != "claude" or not item.summary_en:
+        item.summary_en = build_rule_summary(item, "en")
     return item
 
 

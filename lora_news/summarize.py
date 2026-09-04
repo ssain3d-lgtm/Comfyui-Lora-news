@@ -11,15 +11,23 @@ import time
 from datetime import datetime, timezone
 
 from .classify import CATEGORIES, GH_CATEGORIES, LORA_CATEGORIES, WF_CATEGORIES
+from .i18n import msg
 from .models import LoraItem
 from .store import Store
+
+
+class SummarizeError(RuntimeError):
+    def __init__(self, message: dict):
+        super().__init__(message["ko"])
+        self.message = message
 
 log = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = (
-    "당신은 ComfyUI 사용자를 위해 LoRA 모델, ComfyUI 워크플로우, 관련 GitHub 저장소를 한국어로 짧게 소개하는 도우미입니다. "
+    "당신은 ComfyUI 사용자를 위해 LoRA 모델, ComfyUI 워크플로우, 관련 GitHub 저장소를 짧게 소개하는 도우미입니다. "
     "각 항목에 대해 (1) 어떤 용도인지, (2) 어떤 베이스 모델에서 쓰는지, (3) 트리거 워드나 사용 팁이 있으면 그것까지 "
-    "한두 문장(최대 100자)으로 자연스럽게 요약하세요. 워크플로우는 무엇을 만드는 흐름인지와 필요한 모델/노드를 적으세요. "
+    "한두 문장으로 자연스럽게 요약하세요. summary_ko 는 한국어(최대 100자), summary_en 은 같은 내용의 영어(최대 160자)입니다. "
+    "워크플로우는 무엇을 만드는 흐름인지와 필요한 모델/노드를 적으세요. "
     "정보가 부족하면 아는 범위에서만 쓰고 지어내지 마세요. category 는 각 항목의 allowed_categories 중 하나를 고르세요."
 )
 
@@ -41,9 +49,10 @@ OUTPUT_SCHEMA = {
                 "properties": {
                     "key": {"type": "string"},
                     "summary_ko": {"type": "string"},
+                    "summary_en": {"type": "string"},
                     "category": {"type": "string", "enum": CATEGORIES},
                 },
-                "required": ["key", "summary_ko", "category"],
+                "required": ["key", "summary_ko", "summary_en", "category"],
                 "additionalProperties": False,
             },
         }
@@ -76,17 +85,17 @@ class ClaudeSummarizer:
         self.batch_size = batch_size
         self.client = None
         self.available = False
-        self.reason = ""
+        self.reason: dict | None = None
         try:
             import anthropic  # noqa: F401
         except ImportError:
-            self.reason = "anthropic 패키지가 없습니다 (pip install anthropic)"
+            self.reason = msg("claude_no_sdk")
             return
         try:
             self.client = anthropic.Anthropic()
             self.available = True
         except Exception as e:  # noqa: BLE001
-            self.reason = f"Claude 클라이언트 초기화 실패: {e}"
+            self.reason = msg("claude_init_failed", err=e)
 
     # ------------------------------------------------------------------
     def apply_cached(self, items: list[LoraItem]) -> int:
@@ -96,15 +105,16 @@ class ClaudeSummarizer:
             hit = cache.get(it.key)
             if isinstance(hit, dict) and hit.get("summary_ko"):
                 it.summary_ko = hit["summary_ko"]
+                it.summary_en = hit.get("summary_en") or ""
                 it.summary_source = "claude"
                 if hit.get("category") in CATEGORIES:
                     it.category = hit["category"]
                 n += 1
         return n
 
-    def summarize(self, items: list[LoraItem], progress=None) -> tuple[int, list[str]]:
-        """캐시에 없는 항목을 신규 우선으로 최대 max_items 개 요약. (요약 개수, 오류) 반환."""
-        errors: list[str] = []
+    def summarize(self, items: list[LoraItem], progress=None) -> tuple[int, list[dict]]:
+        """캐시에 없는 항목을 신규 우선으로 최대 max_items 개 요약. (요약 개수, 오류 메시지 목록) 반환."""
+        errors: list[dict] = []
         if not self.available:
             return 0, [self.reason] if self.reason else []
         cache = self.store.load_summaries()
@@ -115,28 +125,34 @@ class ClaudeSummarizer:
         for start in range(0, len(todo), self.batch_size):
             batch = todo[start:start + self.batch_size]
             if progress:
-                progress(f"Claude 한글 요약 생성 중… ({done}/{len(todo)})")
+                progress(msg("claude_progress", done=done, total=len(todo)))
             try:
                 results = self._call(batch)
-            except Exception as e:  # noqa: BLE001
-                msg = f"Claude 요약 실패: {e}"
-                log.warning(msg)
-                errors.append(msg)
-                if "인증" in msg or "AuthenticationError" in msg:
+            except SummarizeError as e:
+                log.warning(e.message["ko"])
+                errors.append(msg("claude_failed", err=e.message["ko"]) | {"en": msg("claude_failed", err=e.message["en"])["en"]})
+                if e.message.get("key") == "claude_auth":
                     break
+                continue
+            except Exception as e:  # noqa: BLE001
+                log.warning("Claude 요약 실패: %s", e)
+                errors.append(msg("claude_failed", err=e))
                 continue
             by_key = {it.key: it for it in batch}
             now = datetime.now(timezone.utc).isoformat()
             for r in results:
                 it = by_key.get(r.get("key"))
                 summary = (r.get("summary_ko") or "").strip()
+                summary_en = (r.get("summary_en") or "").strip()
                 if not it or not summary:
                     continue
                 it.summary_ko = summary
+                it.summary_en = summary_en
                 it.summary_source = "claude"
                 if r.get("category") in CATEGORIES:
                     it.category = r["category"]
-                cache[it.key] = {"summary_ko": summary, "category": it.category, "model": self.model, "ts": now}
+                cache[it.key] = {"summary_ko": summary, "summary_en": summary_en, "category": it.category,
+                                 "model": self.model, "ts": now}
                 done += 1
             self.store.save_summaries(cache)
         return done, errors
@@ -169,7 +185,7 @@ class ClaudeSummarizer:
                 break
             except anthropic.AuthenticationError as e:
                 self.available = False
-                raise RuntimeError(f"인증 실패 (API 키 확인): {e}") from None
+                raise SummarizeError(msg("claude_auth", err=e)) from None
             except anthropic.RateLimitError as e:
                 if attempt == 0:
                     wait = 20
@@ -180,15 +196,15 @@ class ClaudeSummarizer:
                     log.info("Claude 요청 한도, %ds 후 재시도", wait)
                     time.sleep(min(wait, 60))
                     continue
-                raise RuntimeError("요청 한도 초과") from None
+                raise SummarizeError(msg("claude_rate")) from None
             except anthropic.APIStatusError as e:
-                raise RuntimeError(f"API 오류 {e.status_code}: {getattr(e, 'message', e)}") from None
+                raise SummarizeError(msg("claude_api", status=e.status_code, err=getattr(e, "message", e))) from None
             except anthropic.APIConnectionError as e:
-                raise RuntimeError(f"네트워크 오류: {e}") from None
+                raise SummarizeError(msg("claude_network", err=e)) from None
 
         if response.stop_reason == "refusal":
             details = getattr(response, "stop_details", None)
-            raise RuntimeError(f"모델이 응답을 거절했습니다: {getattr(details, 'category', '')}")
+            raise SummarizeError(msg("claude_refusal", category=getattr(details, "category", "") or ""))
         text = next((b.text for b in response.content if getattr(b, "type", "") == "text"), "")
         data = json.loads(text) if text else {}
         items = data.get("items") if isinstance(data, dict) else None

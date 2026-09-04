@@ -45,6 +45,7 @@ code { background: var(--panel-2); padding: 1px 5px; border-radius: 5px; font-si
 }
 .btn:disabled { opacity: .5; cursor: default; }
 .btn.ghost { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); }
+.btn.lang { min-width: 64px; letter-spacing: .3px; }
 
 .tabs { display: flex; gap: 6px; padding: 14px 24px 0; border-bottom: 1px solid var(--border); margin: 0 24px; padding-left: 0; padding-right: 0; }
 .tab {

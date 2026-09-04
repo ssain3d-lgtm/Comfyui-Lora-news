@@ -5,6 +5,7 @@ import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from .. import http
+from ..i18n import msg
 from ..models import LoraItem
 
 log = logging.getLogger(__name__)
@@ -68,9 +69,9 @@ def parse_repo(r: dict, kind: str = "lora") -> LoraItem | None:
     )
 
 
-def fetch(per_page: int = 50, token: str = "", timeout: int = 30, workers: int = 3) -> tuple[list[LoraItem], list[str]]:
+def fetch(per_page: int = 50, token: str = "", timeout: int = 30, workers: int = 3) -> tuple[list[LoraItem], list[dict]]:
     items: dict[str, LoraItem] = {}
-    errors: list[str] = []
+    errors: list[dict] = []
 
     def run(kind: str, q: str, sort: str):
         params = {"q": q, "sort": sort, "order": "desc", "per_page": per_page}
@@ -82,18 +83,14 @@ def fetch(per_page: int = 50, token: str = "", timeout: int = 30, workers: int =
             try:
                 kind, data = fut.result()
             except http.HttpError as e:
-                if e.status in (403, 429):
-                    msg = "GitHub API 요청 한도 초과 (GITHUB_TOKEN 설정 시 한도가 늘어납니다)"
-                else:
-                    msg = f"GitHub 요청 실패: {e}"
-                log.warning(msg)
-                if msg not in errors:
-                    errors.append(msg)
+                m = msg("gh_rate_limited") if e.status in (403, 429) else msg("gh_failed", err=e)
+                log.warning(m["ko"])
+                if m not in errors:
+                    errors.append(m)
                 continue
             except Exception as e:  # noqa: BLE001
-                msg = f"GitHub 요청 실패: {e}"
-                log.warning(msg)
-                errors.append(msg)
+                log.warning("GitHub 요청 실패: %s", e)
+                errors.append(msg("gh_failed", err=e))
                 continue
             for r in (data or {}).get("items") or []:
                 try:

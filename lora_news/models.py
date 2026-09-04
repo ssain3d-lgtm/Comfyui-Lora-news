@@ -21,6 +21,7 @@ class LoraItem:
     category: str = ""            # 분류된 용도 라벨
     hints: list = field(default_factory=list)   # 한글 힌트 (예: 수채화 느낌)
     summary_ko: str = ""
+    summary_en: str = ""
     summary_source: str = "rule"  # "rule" | "claude"
     trigger_words: list = field(default_factory=list)
     example_prompt: str = ""

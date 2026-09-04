@@ -117,12 +117,37 @@ class ClassifyTests(unittest.TestCase):
         self.assertTrue(it.summary_ko.startswith("Illustrious (SDXL 계열) 기반 스타일/화풍 LoRA · 애니메이션 화풍, 지브리풍"), it.summary_ko)
         self.assertTrue(it.summary_ko.endswith("트리거: ghibli style"), it.summary_ko)
 
+    def test_english_summaries(self):
+        self.assertEqual(self.items["hf:someone/sd15-watercolor-dreams"].summary_en, "Style/art style LoRA for SD 1.5 · watercolour look")
+        self.assertEqual(self.items["hf:ByteDance/SDXL-Lightning"].summary_en, "Speed-up (few-step) LoRA for SDXL · fast 4-8 step generation")
+        pony = self.items["hf:someone/pony-anime-character-akira"].summary_en
+        self.assertTrue(pony.startswith("Character LoRA for Pony (SDXL family)"), pony)
+        self.assertIn("Trigger: akira_chr, red jacket", pony)
+        self.assertTrue(pony.endswith("NSFW tag"), pony)
+        wf = self.items["civitai:2002"].summary_en
+        self.assertTrue(wf.startswith("Wan 2.x (video) ComfyUI workflow for video generation · image-to-video (I2V)"), wf)
+        self.assertIn("1 JSON file", wf)
+        generic = self.items["gh:comfyanonymous/ComfyUI_examples"].summary_en
+        self.assertTrue(generic.startswith("Collection of ComfyUI workflow templates"), generic)
+        gh = self.items["gh:kohya-ss/sd-scripts"].summary_en
+        self.assertTrue(gh.startswith("GitHub · Training tool · LoRA training tool"), gh)
+        for it in self.items.values():
+            self.assertTrue(it.summary_en, it.key)
+            self.assertFalse(any("\uac00" <= ch <= "\ud7a3" for ch in it.summary_en), f"영문 요약에 한글 포함: {it.summary_en}")
+
     def test_claude_summary_not_overwritten(self):
         it = LoraItem(key="hf:x/y", source="huggingface", name="x/y-flux-style", author="x", url="",
-                      summary_ko="Claude 요약", summary_source="claude")
+                      summary_ko="Claude 요약", summary_en="Claude summary", summary_source="claude")
         classify(it)
         self.assertEqual(it.summary_ko, "Claude 요약")
+        self.assertEqual(it.summary_en, "Claude summary")
         self.assertEqual(it.summary_source, "claude")
+        # 영문 요약이 비어 있는 옛 캐시는 규칙 기반 영문으로 채움
+        it2 = LoraItem(key="hf:x/z", source="huggingface", name="x/z-flux-style", author="x", url="",
+                       summary_ko="Claude 요약", summary_source="claude")
+        classify(it2)
+        self.assertEqual(it2.summary_ko, "Claude 요약")
+        self.assertTrue(it2.summary_en.startswith("Style/art style LoRA for FLUX.1"), it2.summary_en)
 
     def test_word_boundaries(self):
         it = LoraItem(key="hf:a/b", source="huggingface", name="a/influx-startle", author="a", url="",

@@ -10,7 +10,7 @@ import urllib.request
 
 log = logging.getLogger(__name__)
 
-USER_AGENT = "lora-news/0.1 (+https://github.com/ssain3d-lgtm/Claude-Launcher)"
+USER_AGENT = "comfyui-lora-news/0.1 (+https://github.com/ssain3d-lgtm/Comfyui-Lora-news)"
 
 
 class HttpError(Exception):

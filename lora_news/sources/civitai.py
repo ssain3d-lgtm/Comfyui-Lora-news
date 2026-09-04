@@ -10,6 +10,7 @@ import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from .. import http
+from ..i18n import msg
 from ..models import LoraItem
 from ..text import strip_html
 
@@ -127,9 +128,9 @@ def parse_model(m: dict) -> LoraItem | None:
 
 
 def fetch(limit: int = 100, token: str = "", timeout: int = 30, nsfw: bool = False,
-          workers: int = 3) -> tuple[list[LoraItem], list[str]]:
+          workers: int = 3) -> tuple[list[LoraItem], list[dict]]:
     items: dict[str, LoraItem] = {}
-    errors: list[str] = []
+    errors: list[dict] = []
 
     def run(kind: str, q: dict):
         params = dict(q)
@@ -145,23 +146,22 @@ def fetch(limit: int = 100, token: str = "", timeout: int = 30, nsfw: bool = Fal
                 kind, data = fut.result()
             except http.HttpError as e:
                 if e.status == 403:
-                    msg = "Civitai 접근 거부(403): Cloudflare 차단이거나 API 키가 필요할 수 있습니다 (CIVITAI_API_KEY 설정 시도)"
+                    m = msg("cv_forbidden")
                 elif e.status == 429:
-                    msg = "Civitai 요청 한도 초과(429): 잠시 후 다시 시도하세요"
+                    m = msg("cv_rate_limited")
                 else:
-                    msg = f"Civitai 요청 실패: {e}"
-                log.warning(msg)
-                if msg not in errors:
-                    errors.append(msg)
+                    m = msg("cv_failed", err=e)
+                log.warning(m["ko"])
+                if m not in errors:
+                    errors.append(m)
                 continue
             except Exception as e:  # noqa: BLE001
-                msg = f"Civitai 요청 실패: {e}"
-                log.warning(msg)
-                errors.append(msg)
+                log.warning("Civitai 요청 실패: %s", e)
+                errors.append(msg("cv_failed", err=e))
                 continue
             rows = (data or {}).get("items") if isinstance(data, dict) else None
             if not isinstance(rows, list):
-                errors.append(f"Civitai 응답 형식 오류: {str(data)[:120]}")
+                errors.append(msg("cv_bad_response", body=str(data)[:120]))
                 continue
             for m in rows:
                 try:

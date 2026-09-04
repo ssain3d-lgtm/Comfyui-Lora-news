@@ -6,8 +6,9 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 
-from .classify import classify
+from .classify import BASE_MODEL_EN, CATEGORY_EN, classify
 from .config import Config
+from .i18n import msg
 from .models import LoraItem
 from .sources import civitai as cv_source
 from .sources import github as gh_source
@@ -15,6 +16,8 @@ from .sources import huggingface as hf_source
 from .store import Store
 
 log = logging.getLogger(__name__)
+
+SOURCE_NAMES = {"huggingface": "Hugging Face", "github": "GitHub", "civitai": "Civitai"}
 
 
 def _now() -> datetime:
@@ -53,10 +56,10 @@ class NewsService:
         self._refresh_thread: threading.Thread | None = None
         self.status: dict = {
             "refreshing": False,
-            "progress": "",
+            "progress": None,          # {"key","ko","en"} 또는 None
             "last_refresh": None,
             "last_error": None,
-            "errors": [],
+            "errors": [],              # [{"key","ko","en"}, ...]
             "claude": {"enabled": self.config.claude_enabled, "model": self.config.claude_model, "summarized": 0},
             "counts": {},
         }
@@ -68,9 +71,13 @@ class NewsService:
             self.status["claude"].update({k: v for k, v in cache["claude"].items() if k in ("summarized",)})
 
     # ------------------------------------------------------------------
-    def _set_progress(self, text: str) -> None:
-        self.status["progress"] = text
-        log.info(text)
+    def _set_progress(self, message, **kw) -> None:
+        """message: i18n 키(+포맷 인자) 또는 이미 만들어진 메시지 dict, None 이면 지움."""
+        if isinstance(message, str):
+            message = msg(message, **kw)
+        self.status["progress"] = message
+        if message:
+            log.info(message["ko"])
 
     def start_refresh(self) -> bool:
         """백그라운드 새로고침 시작. 이미 진행 중이면 False."""
@@ -78,7 +85,7 @@ class NewsService:
             if self.status["refreshing"]:
                 return False
             self.status["refreshing"] = True
-            self.status["progress"] = "시작 중…"
+            self.status["progress"] = msg("starting")
             self._refresh_thread = threading.Thread(target=self._refresh_safe, daemon=True)
             self._refresh_thread.start()
             return True
@@ -96,7 +103,7 @@ class NewsService:
             self.status["last_error"] = str(e)
         finally:
             self.status["refreshing"] = False
-            self.status["progress"] = ""
+            self.status["progress"] = None
 
     # ------------------------------------------------------------------
     def refresh(self) -> dict:
@@ -104,13 +111,13 @@ class NewsService:
         self.status["errors"] = []
         self.status["last_error"] = None
         started = _now()
-        self._set_progress("Hugging Face / GitHub / Civitai 에서 목록 가져오는 중…")
+        self._set_progress("fetching")
 
         with ThreadPoolExecutor(max_workers=3) as pool:
             hf_fut = pool.submit(self._hf_fetch)
             gh_fut = pool.submit(self._gh_fetch)
             cv_fut = pool.submit(self._cv_fetch)
-            hf_items, hf_errors = self._safe_result(hf_fut, "HuggingFace")
+            hf_items, hf_errors = self._safe_result(hf_fut, "Hugging Face")
             gh_items, gh_errors = self._safe_result(gh_fut, "GitHub")
             cv_items, cv_errors = self._safe_result(cv_fut, "Civitai")
         errors = list(hf_errors) + list(gh_errors) + list(cv_errors)
@@ -125,7 +132,7 @@ class NewsService:
             if not got:
                 kept = [it for it in previous.values() if it.source == source]
                 if kept:
-                    errors.append(f"{source} 수집 결과가 비어 있어 이전 캐시 {len(kept)}개를 유지합니다")
+                    errors.append(msg("kept_cache", source=SOURCE_NAMES.get(source, source), n=len(kept)))
                 for it in kept:
                     fetched.setdefault(it.key, it)
 
@@ -133,7 +140,7 @@ class NewsService:
         for key, it in fetched.items():
             prev = previous.get(key)
             if prev and prev.summary_source == "claude" and prev.summary_ko:
-                it.summary_ko, it.summary_source = prev.summary_ko, "claude"
+                it.summary_ko, it.summary_en, it.summary_source = prev.summary_ko, prev.summary_en, "claude"
             if prev and prev.description and not it.description.startswith(prev.description[:40]) and it.source == "huggingface":
                 # README 발췌를 이미 받아둔 경우 재사용
                 if len(prev.description) > len(it.description):
@@ -143,7 +150,7 @@ class NewsService:
                             it.trigger_words.append(t)
 
         items = list(fetched.values())
-        self._set_progress(f"{len(items)}개 항목 신규 판정 중…")
+        self._set_progress("marking_new", n=len(items))
         self._mark_new(items, started)
 
         # README 발췌 보강 (신규/미요약 항목 우선, 최대 N개)
@@ -151,13 +158,13 @@ class NewsService:
         need.sort(key=lambda it: (not it.found_this_run, not it.is_new, -(it.downloads + it.likes * 10)))
         need = need[: self.config.readme_fetch_max]
         if need:
-            self._set_progress(f"모델 카드 {len(need)}개 읽는 중…")
+            self._set_progress("reading_cards", n=len(need))
             try:
                 self._readme_enricher(need)
             except Exception as e:  # noqa: BLE001
-                errors.append(f"모델 카드 읽기 실패: {e}")
+                errors.append(msg("readme_failed", err=e))
 
-        self._set_progress("분류 및 한글 요약 생성 중…")
+        self._set_progress("classifying")
         for it in items:
             classify(it)
 
@@ -169,7 +176,7 @@ class NewsService:
                 summarized, s_errors = summarizer.summarize(items, progress=self._set_progress)
                 errors.extend(s_errors)
             except Exception as e:  # noqa: BLE001
-                errors.append(f"Claude 요약 실패: {e}")
+                errors.append(msg("claude_failed", err=e))
             self.status["claude"]["summarized"] = self.status["claude"].get("summarized", 0) + summarized
 
         items.sort(key=lambda it: (it.found_this_run, it.is_new, it.created_at or ""), reverse=True)
@@ -184,7 +191,7 @@ class NewsService:
             "claude": {"summarized": self.status["claude"]["summarized"]},
             "items": [it.to_dict() for it in items],
         })
-        self._set_progress("")
+        self._set_progress(None)
         log.info("새로고침 완료: %s", self.status["counts"])
         return self.status["counts"]
 
@@ -202,13 +209,13 @@ class NewsService:
         return self._summarizer
 
     @staticmethod
-    def _safe_result(fut, label: str) -> tuple[list[LoraItem], list[str]]:
+    def _safe_result(fut, label: str) -> tuple[list[LoraItem], list[dict]]:
         try:
             items, errors = fut.result()
             return list(items), list(errors)
         except Exception as e:  # noqa: BLE001
             log.warning("%s 수집 실패: %s", label, e)
-            return [], [f"{label} 수집 실패: {e}"]
+            return [], [msg("source_failed", source=label, err=e)]
 
     def _mark_new(self, items: list[LoraItem], now: datetime) -> None:
         seen = self.store.load_seen()
@@ -270,4 +277,5 @@ class NewsService:
             "status": self.status,
             "items": [it.to_dict() for it in self.items],
             "facets": facets,
+            "labels_en": {"base_models": BASE_MODEL_EN, "categories": CATEGORY_EN},
         }
