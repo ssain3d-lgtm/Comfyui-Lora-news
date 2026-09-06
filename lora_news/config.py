@@ -6,6 +6,40 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 
 
+def load_dotenv(path: Path | None = None, override: bool = False) -> dict:
+    """프로젝트 루트의 .env 파일을 읽어 환경변수에 넣는다 (외부 패키지 없이).
+
+    - `KEY=VALUE` 한 줄씩. `#` 으로 시작하는 줄과 빈 줄은 무시. 값의 따옴표는 벗긴다.
+    - 이미 설정된 환경변수는 override=True 가 아니면 건드리지 않는다.
+    - 읽어 들인 값들을 dict 로 반환 (테스트/디버그용).
+    """
+    path = Path(path) if path else ROOT / ".env"
+    loaded: dict = {}
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (FileNotFoundError, OSError):
+        return loaded
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        if line.lower().startswith("export "):
+            line = line[7:].strip()
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
+            value = value[1:-1]
+        elif " #" in value:
+            value = value.split(" #", 1)[0].rstrip()
+        if not key:
+            continue
+        if override or key not in os.environ:
+            os.environ[key] = value
+        loaded[key] = value
+    return loaded
+
+
 def _int(name: str, default: int) -> int:
     try:
         return int(os.environ.get(name, default))
@@ -16,7 +50,8 @@ def _int(name: str, default: int) -> int:
 class Config:
     """환경변수로 조정 가능한 설정값."""
 
-    def __init__(self) -> None:
+    def __init__(self, env_file: Path | None = None) -> None:
+        load_dotenv(env_file)
         self.data_dir = Path(os.environ.get("LORA_NEWS_DATA_DIR", ROOT / "data"))
         self.host = os.environ.get("LORA_NEWS_HOST", "127.0.0.1")
         self.port = _int("LORA_NEWS_PORT", 8765)

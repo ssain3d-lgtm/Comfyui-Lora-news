@@ -18,22 +18,78 @@ The UI switches between **English and Korean** with one click.
 
 ## English
 
-### Quick start
+### Installation (step by step)
+
+> This is a **standalone app**, not a ComfyUI custom node. Do **not** put it in `ComfyUI/custom_nodes`.
+> It runs on its own and opens a page in your browser; ComfyUI does not need to be running.
+
+**1. Install Python 3.10 or newer** (skip if you already have it)
+
+- Windows: download from <https://www.python.org/downloads/>, run the installer and tick **"Add python.exe to PATH"**.
+- macOS: `brew install python` or the installer from python.org.
+- Linux: `sudo apt install python3` (Debian/Ubuntu) or your distro's package.
+
+Check it:
 
 ```bash
-python app.py
+python --version      # Windows
+python3 --version     # macOS / Linux
 ```
 
-That is all. Python 3.10+ is the only requirement; there are no packages to install.
-The browser opens `http://127.0.0.1:8765/`, a refresh starts in the background, and the page updates when it is done.
-Use the **Refresh** button at any time; the **EN / 한국어** button switches the language (remembered in the browser).
+You should see `Python 3.10` or higher. No other packages are required.
+
+**2. Get the code** (either way works)
 
 ```bash
-# Windows
+git clone https://github.com/ssain3d-lgtm/Comfyui-Lora-news.git
+cd Comfyui-Lora-news
+```
+
+or click **Code → Download ZIP** on GitHub, extract it, and open the extracted folder.
+
+**3. (Optional) Configure tokens**
+
+Everything works without tokens. If you want a higher GitHub rate limit, Civitai API access, or Claude-written summaries,
+copy `.env.example` to `.env` and fill in the lines you need:
+
+```bash
+copy .env.example .env      # Windows
+cp .env.example .env        # macOS / Linux
+```
+
+The app reads `.env` from its own folder on start. Variables set in your shell take precedence.
+For Claude summaries also run `pip install -r requirements-optional.txt`.
+
+**4. Run it**
+
+```bash
+# Windows: double-click run.bat, or in a terminal
 run.bat
+
 # macOS / Linux
+chmod +x run.sh
 ./run.sh
+
+# Any OS
+python app.py          # use python3 on macOS / Linux
 ```
+
+Your browser opens `http://127.0.0.1:8765/`. The first fetch runs in the background and takes about a minute;
+the page refreshes itself when it is done. If the browser does not open, paste the address yourself.
+Press `Ctrl+C` in the terminal to stop.
+
+**5. Update later**
+
+```bash
+git pull
+```
+
+(or download the ZIP again). Your cache in `data/` and your `.env` are kept.
+To uninstall, delete the folder.
+
+### Running options
+
+Use the **Refresh** button at any time; the **EN / 한국어** button switches the language (remembered in the browser).
 
 | Option | Description |
 | --- | --- |
@@ -42,6 +98,17 @@ run.bat
 | `--refresh-only` | Fetch, print a summary and exit (for cron / Task Scheduler) |
 | `--demo` | Run with bundled sample data, no network needed |
 | `--port 9000` | Change the port (default 8765) |
+
+### Troubleshooting
+
+| Symptom | What to do |
+| --- | --- |
+| `python` is not recognized / command not found | Reinstall Python with "Add to PATH" ticked, or use `py -3 app.py` (Windows) / `python3 app.py` (macOS, Linux) |
+| `Address already in use` | Another program uses port 8765: run `python app.py --port 9000` |
+| "GitHub API rate limit exceeded" in the page | Unauthenticated search allows 10 requests/min; add `GITHUB_TOKEN` to `.env` or wait a minute and press Refresh |
+| "Civitai returned 403" | Cloudflare blocked the request; add `CIVITAI_API_KEY` to `.env`. The previous cache is kept meanwhile |
+| Page is empty on first run | The fetch is still running (spinner at the top right); wait for it to finish |
+| Want to verify the UI without network | `python app.py --demo` |
 
 ### Features
 
@@ -56,6 +123,8 @@ run.bat
 - **Optional Claude summaries**: with an API key Claude writes more natural English and Korean summaries (only for new items, cached)
 
 ### Environment variables (all optional)
+
+Set these in your shell or in the `.env` file (see `.env.example`).
 
 | Variable | Description |
 | --- | --- |
@@ -136,6 +205,7 @@ lora_news/
 static/                 # front-end (no dependencies, EN/KO toggle)
 tests/                  # unit tests + sample data
 docs/                   # screenshots
+.env.example            # optional settings template (copy to .env)
 ```
 
 ---
@@ -148,22 +218,76 @@ docs/                   # screenshots
 각 항목에 **한 줄 요약**과 **트리거 워드**를 붙여 브라우저에서 보여주는 로컬 웹앱입니다.
 화면 상단의 **EN / 한국어** 버튼으로 영문·한글 표시를 전환하고, **LoRA / 워크플로우** 탭으로 종류를 전환합니다.
 
-### 실행 방법
+### 설치 방법 (단계별)
+
+> 이 프로그램은 **ComfyUI 커스텀 노드가 아니라 별도로 실행하는 앱**입니다. `ComfyUI/custom_nodes` 에 넣지 마세요.
+> 혼자 실행되어 브라우저에 페이지를 띄우며, ComfyUI 가 켜져 있을 필요도 없습니다.
+
+**1. Python 3.10 이상 설치** (이미 있으면 건너뜀)
+
+- Windows: <https://www.python.org/downloads/> 에서 설치 파일을 받아 실행하고, **"Add python.exe to PATH"** 에 체크합니다.
+- macOS: `brew install python` 또는 python.org 설치 파일.
+- Linux: `sudo apt install python3` (Debian/Ubuntu) 등 배포판 패키지.
+
+확인:
 
 ```bash
-python app.py
+python --version      # Windows
+python3 --version     # macOS / Linux
 ```
 
-이게 전부입니다. Python 3.10 이상만 있으면 되고 추가 설치 패키지는 없습니다.
-브라우저가 자동으로 `http://127.0.0.1:8765/` 를 열고, 백그라운드에서 최신 목록을 받아온 뒤 화면이 자동 갱신됩니다.
-오른쪽 위 **새로고침** 버튼으로 언제든 다시 받아올 수 있습니다.
+`Python 3.10` 이상이 나오면 됩니다. 다른 패키지는 필요 없습니다.
+
+**2. 코드 받기** (둘 중 하나)
 
 ```bash
-# Windows
+git clone https://github.com/ssain3d-lgtm/Comfyui-Lora-news.git
+cd Comfyui-Lora-news
+```
+
+또는 GitHub 에서 **Code → Download ZIP** 을 눌러 압축을 풀고 그 폴더로 들어갑니다.
+
+**3. (선택) 토큰 설정**
+
+토큰 없이도 동작합니다. GitHub 한도 확대, Civitai API, Claude 요약을 쓰고 싶을 때만
+`.env.example` 을 `.env` 로 복사해 필요한 줄을 채우세요:
+
+```bash
+copy .env.example .env      # Windows
+cp .env.example .env        # macOS / Linux
+```
+
+앱은 시작할 때 자기 폴더의 `.env` 를 읽습니다. 쉘에 설정된 환경변수가 우선합니다.
+Claude 요약을 쓰려면 `pip install -r requirements-optional.txt` 도 실행합니다.
+
+**4. 실행**
+
+```bash
+# Windows: run.bat 더블클릭, 또는 터미널에서
 run.bat
+
 # macOS / Linux
+chmod +x run.sh
 ./run.sh
+
+# 공통
+python app.py          # macOS / Linux 는 python3
 ```
+
+브라우저가 `http://127.0.0.1:8765/` 를 엽니다. 첫 수집은 백그라운드에서 1분 정도 걸리고 끝나면 화면이 자동 갱신됩니다.
+브라우저가 안 열리면 주소를 직접 입력하세요. 종료는 터미널에서 `Ctrl+C`.
+
+**5. 업데이트**
+
+```bash
+git pull
+```
+
+(또는 ZIP 을 다시 받기). `data/` 캐시와 `.env` 는 그대로 유지됩니다. 삭제는 폴더를 지우면 끝입니다.
+
+### 실행 옵션
+
+오른쪽 위 **새로고침** 버튼으로 언제든 다시 받아올 수 있고, **EN / 한국어** 버튼으로 언어를 바꿉니다(브라우저에 기억됨).
 
 | 옵션 | 설명 |
 | --- | --- |
@@ -172,6 +296,17 @@ run.bat
 | `--refresh-only` | 서버 없이 수집만 하고 종료 (작업 스케줄러/cron 용) |
 | `--demo` | 네트워크 없이 샘플 데이터로 UI 확인 |
 | `--port 9000` | 포트 변경 (기본 8765) |
+
+### 문제 해결
+
+| 증상 | 조치 |
+| --- | --- |
+| `python` 을 찾을 수 없음 | "Add to PATH" 체크 후 Python 재설치, 또는 `py -3 app.py` (Windows) / `python3 app.py` (macOS, Linux) |
+| `Address already in use` | 8765 포트를 다른 프로그램이 사용 중: `python app.py --port 9000` |
+| 화면에 "GitHub API 요청 한도 초과" | 비로그인 검색은 분당 10회: `.env` 에 `GITHUB_TOKEN` 추가하거나 1분 뒤 새로고침 |
+| "Civitai 접근 거부(403)" | Cloudflare 차단: `.env` 에 `CIVITAI_API_KEY` 추가. 그동안은 이전 캐시 유지 |
+| 첫 실행에 화면이 비어 있음 | 수집이 진행 중(오른쪽 위 회전 표시). 끝날 때까지 기다리면 됨 |
+| 네트워크 없이 화면만 확인 | `python app.py --demo` |
 
 ### 기능
 
@@ -187,6 +322,8 @@ run.bat
 - **(선택) Claude 요약**: API 키가 있으면 더 자연스러운 영문·한글 요약을 생성 (신규 항목만 호출, 캐시됨)
 
 ### 환경변수 (모두 선택)
+
+쉘 환경변수 또는 `.env` 파일(`.env.example` 참고)로 설정합니다.
 
 | 변수 | 설명 |
 | --- | --- |
@@ -265,4 +402,5 @@ lora_news/
 static/                 # 프론트엔드 (의존성 없음, 한/영 토글)
 tests/                  # 단위 테스트 + 샘플 데이터
 docs/                   # 스크린샷
+.env.example            # 선택 설정 템플릿 (.env 로 복사해서 사용)
 ```
