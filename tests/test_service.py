@@ -119,5 +119,87 @@ class ServiceTests(unittest.TestCase):
             self.assertEqual(sum(1 for it in svc2.items if it.summary_source == "claude"), 2)
 
 
+class NewDetectionTests(unittest.TestCase):
+    """신규 판정은 이 앱의 핵심 기능이라 실패 조합까지 따로 확인한다."""
+
+    def items_for(self, source, n=3):
+        return [LoraItem(key=f"{source}:{i}", source=source, name=f"{source}/{i}", author="a", url="",
+                         created_at="2020-01-01T00:00:00.000Z") for i in range(n)]
+
+    def test_baseline_is_per_source(self):
+        hf = self.items_for("huggingface")
+        cv = self.items_for("civitai")
+        with tempfile.TemporaryDirectory() as tmp:
+            # 1회차: Civitai 실패
+            first = make_service(tmp, lambda: (hf, []), lambda: ([], []), lambda: ([], []))
+            first.refresh()
+            self.assertEqual(first.status["counts"]["found_this_run"], 0)
+
+            # 2회차: Civitai 성공. 오래된 Civitai 항목이 "신규"로 쏟아지면 안 된다.
+            second = make_service(tmp, lambda: (hf, []), lambda: ([], []), lambda: (cv, []))
+            counts = second.refresh()
+            self.assertEqual(counts["civitai"], len(cv))
+            self.assertEqual(counts["found_this_run"], 0, "소스마다 기준선을 따로 잡아야 한다")
+            self.assertEqual(counts["new"], 0)
+
+            # 3회차: 진짜 신규 한 건
+            fresh = LoraItem(key="civitai:new", source="civitai", name="new", author="a", url="",
+                             created_at=datetime.now(timezone.utc).isoformat())
+            third = make_service(tmp, lambda: (hf, []), lambda: ([], []), lambda: (cv + [fresh], []))
+            self.assertEqual(third.refresh()["found_this_run"], 1)
+
+    def test_cached_new_badges_expire(self):
+        old = datetime.now(timezone.utc) - timedelta(days=30)
+        with tempfile.TemporaryDirectory() as tmp:
+            store = Store(Path(tmp))
+            store.save_cache({"updated_at": "x", "items": [{
+                "key": "hf:a/b", "source": "huggingface", "name": "a/b", "author": "a", "url": "",
+                "first_seen": old.isoformat(), "is_new": True, "found_this_run": True}]})
+            svc = make_service(tmp, lambda: ([], []), lambda: ([], []))
+            it = svc.items[0]
+            self.assertFalse(it.is_new, "30일 전 항목에 NEW 배지가 남으면 안 된다")
+            self.assertFalse(it.found_this_run, "이전 실행의 발견은 이번 실행의 발견이 아니다")
+
+    def test_partial_source_failure_keeps_known_items(self):
+        hf = self.items_for("huggingface", 5)
+        with tempfile.TemporaryDirectory() as tmp:
+            make_service(tmp, lambda: (hf, []), lambda: ([], [])).refresh()
+            # 쿼리 일부만 성공한 상태: 항목 1개 + 오류 1개
+            from lora_news.i18n import msg
+            svc = make_service(tmp, lambda: (hf[:1], [msg("hf_failed", err="boom")]), lambda: ([], []))
+            counts = svc.refresh()
+            self.assertEqual(counts["huggingface"], 5, "일부 실패해도 알던 항목이 사라지면 안 된다")
+            self.assertTrue(any(e["key"] == "kept_cache" for e in svc.status["errors"]))
+
+    def test_corrupt_cache_entries_are_skipped(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            Store(Path(tmp)).save_cache({"updated_at": "x", "items": [
+                {"key": "hf:ok", "source": "huggingface", "name": "ok", "author": "a", "url": "", "description": None},
+                {"key": "hf:bad", "source": "huggingface", "name": None, "tags": [1, 2]},
+                {"no_key": True},
+            ]})
+            svc = make_service(tmp, lambda: ([], []), lambda: ([], []))
+            self.assertEqual({it.key for it in svc.items}, {"hf:ok", "hf:bad"})
+            self.assertEqual(svc.items[0].description, "", "None 은 빈 문자열로 정리된다")
+            svc.refresh()   # 예외 없이 끝나야 한다
+
+    def test_disabled_source_is_not_fetched(self):
+        called = []
+        hf = self.items_for("huggingface")
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = Config()
+            cfg.data_dir = Path(tmp)
+            cfg.claude_enabled = False
+            cfg.sources = ("huggingface",)
+            svc = NewsService(cfg, store=Store(cfg.data_dir),
+                              hf_fetch=lambda: (hf, []),
+                              gh_fetch=lambda: (called.append("gh"), ([], []))[1],
+                              cv_fetch=lambda: (called.append("cv"), ([], []))[1],
+                              readme_enricher=lambda items: 0)
+            counts = svc.refresh()
+            self.assertEqual(called, [], "꺼둔 소스는 호출하지 않는다")
+            self.assertEqual(counts["total"], len(hf))
+
+
 if __name__ == "__main__":
     unittest.main()

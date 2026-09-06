@@ -1,0 +1,28 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  unittest:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Run tests (standard library only)
+        run: python -m unittest discover -s tests -v
+      - name: Check the app starts on sample data
+        run: |
+          python app.py --demo --no-browser --port 8799 &
+          sleep 3
+          curl -sf http://127.0.0.1:8799/api/status > /dev/null
+          curl -sf http://127.0.0.1:8799/api/items > /dev/null

@@ -71,6 +71,23 @@ def parse_model(m: dict) -> LoraItem | None:
             files.append(fn)
     files = files[:8]
 
+    # 미리보기 이미지: 전체 이용가 등급(nsfwLevel <= 1)만 쓴다. 없으면 표시하지 않는다.
+    thumb = ""
+    for v in versions[:2]:
+        for img in v.get("images") or []:
+            if not isinstance(img, dict) or img.get("type") not in (None, "image"):
+                continue
+            url = img.get("url")
+            try:
+                level = int(img.get("nsfwLevel") or 0)
+            except (TypeError, ValueError):
+                level = 99
+            if isinstance(url, str) and url.startswith("https://") and level <= 1 and not img.get("nsfw"):
+                thumb = url
+                break
+        if thumb:
+            break
+
     published = [_dt(v.get("publishedAt") or v.get("createdAt")) for v in versions]
     published = [p for p in published if p]
     created_at = min(published) if published else ""
@@ -124,6 +141,7 @@ def parse_model(m: dict) -> LoraItem | None:
         likes=int(stats.get("thumbsUpCount") or stats.get("favoriteCount") or 0),
         nsfw=nsfw,
         files=files,
+        thumb="" if nsfw else thumb,
     )
 
 

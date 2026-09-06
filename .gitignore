@@ -1,6 +1,16 @@
 __pycache__/
 *.pyc
+*.pyo
 .venv/
 venv/
+env/
 data/
 .env
+.env.*
+!.env.example
+*.log
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+.pytest_cache/

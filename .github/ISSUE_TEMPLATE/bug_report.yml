@@ -1,0 +1,37 @@
+name: Bug report / 버그 신고
+description: Something does not work / 동작하지 않는 문제를 알려주세요
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Please fill in what you can.
+        신고 감사합니다. 아는 만큼만 채워 주셔도 됩니다.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened? / 무슨 일이 있었나요?
+      description: What you did, what you expected, what you got instead.
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS and Python version / 운영체제와 Python 버전
+      placeholder: "Windows 11, Python 3.12.4 (python --version)"
+    validations:
+      required: true
+  - type: textarea
+    id: errorbox
+    attributes:
+      label: Error box contents / 화면의 오류 상자 내용
+      description: Copy the red box at the top of the page, or the terminal output.
+      render: text
+  - type: dropdown
+    id: demo
+    attributes:
+      label: Does `python app.py --demo` work? / --demo 는 동작하나요?
+      description: This tells us whether the problem is the network or the app itself.
+      options: ["Yes / 예", "No / 아니오", "Not tried / 안 해봤습니다"]
+    validations:
+      required: true

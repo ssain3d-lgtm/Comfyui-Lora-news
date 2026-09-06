@@ -1,5 +1,9 @@
 # ComfyUI LoRA News
 
+[![tests](https://github.com/ssain3d-lgtm/Comfyui-Lora-news/actions/workflows/tests.yml/badge.svg)](https://github.com/ssain3d-lgtm/Comfyui-Lora-news/actions/workflows/tests.yml)
+[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
+
 [English](#english) · [한국어](#한국어)
 
 A local web app that, every time you run it, pulls the latest **LoRAs** and **ComfyUI workflows** from
@@ -13,6 +17,8 @@ The UI switches between **English and Korean** with one click.
 | ![LoRA tab, English](docs/screenshot-en.png) | ![LoRA 탭, 한국어](docs/screenshot-ko.png) |
 
 ![Workflows tab grouped by purpose, English](docs/screenshot-en-workflows.png)
+
+<img src="docs/screenshot-mobile.png" alt="Mobile layout" width="320">
 
 ---
 
@@ -67,7 +73,6 @@ For Claude summaries also run `pip install -r requirements-optional.txt`.
 run.bat
 
 # macOS / Linux
-chmod +x run.sh
 ./run.sh
 
 # Any OS
@@ -98,6 +103,11 @@ Use the **Refresh** button at any time; the **EN / 한국어** button switches t
 | `--refresh-only` | Fetch, print a summary and exit (for cron / Task Scheduler) |
 | `--demo` | Run with bundled sample data, no network needed |
 | `--port 9000` | Change the port (default 8765) |
+| `--host 0.0.0.0` | Bind address (default 127.0.0.1, local only) |
+| `-v`, `--verbose` | Debug logging |
+| `--version` | Print the version and exit |
+
+`--refresh-only` exits with `0` when it has items to show and `1` when it collected nothing.
 
 ### Troubleshooting
 
@@ -108,6 +118,8 @@ Use the **Refresh** button at any time; the **EN / 한국어** button switches t
 | "GitHub API rate limit exceeded" in the page | Unauthenticated search allows 10 requests/min; add `GITHUB_TOKEN` to `.env` or wait a minute and press Refresh |
 | "Civitai returned 403" | Cloudflare blocked the request; add `CIVITAI_API_KEY` to `.env`. The previous cache is kept meanwhile |
 | Page is empty on first run | The fetch is still running (spinner at the top right); wait for it to finish |
+| All three sources failed | You are offline or behind a proxy. The app keeps the previous cache; use `python app.py --demo` to check the UI |
+| Thumbnails do not appear | Images load from Civitai's CDN. If it is blocked the card simply drops the image |
 | Want to verify the UI without network | `python app.py --demo` |
 
 ### Features
@@ -117,6 +129,8 @@ Use the **Refresh** button at any time; the **EN / 한국어** button switches t
 - **New detection**: items seen for the first time get a `NEW` badge; items first seen during this run get `Found this run` (new for 72 hours by default)
 - **Classification**: chips for base model and purpose; group by purpose, base model or source. Workflows use their own categories: image generation, video generation, editing/inpainting, upscale/fix, ControlNet/pose, character consistency, training/tools, collections/templates
 - **Summaries**: rule-based one-liners built from the name, tags and model card, in both English and Korean, e.g. `Style/art style LoRA for FLUX.1 · pastel tones · Trigger: frstingln illustration`
+- **Preview thumbnails**: Civitai items show their preview image (all-ages images only; NSFW items never get one)
+- **Pick your sources**: `LORA_NEWS_SOURCES=huggingface,github` skips a source that is blocked for you
 - **Trigger words**: pulled from Hugging Face model cards (`instance_prompt`, "Trigger words:") and Civitai `trainedWords`; click to copy
 - **Sort / search**: new first, added, updated, downloads, likes/stars, name; text search; hide NSFW (on by default)
 - **Cache**: results live in `data/`, so the last result is available even offline
@@ -133,13 +147,17 @@ Set these in your shell or in the `.env` file (see `.env.example`).
 | `CIVITAI_API_KEY` | Civitai API key (try it if you get 403 / rate-limit errors) |
 | `LORA_NEWS_CIVITAI_NSFW` | `1` to also fetch NSFW items from Civitai (off by default; they can still be hidden in the UI) |
 | `LORA_NEWS_CIVITAI_LIMIT` | Items per Civitai query (default 100, max 100) |
+| `LORA_NEWS_SOURCES` | Use only some sources, e.g. `huggingface,github` (`hf` / `gh` / `cv` also work) |
 | `ANTHROPIC_API_KEY` | Enables Claude summaries; needs `pip install anthropic` |
 | `LORA_NEWS_CLAUDE` | `0` disables Claude even with a key; `1` enables it with an `ant auth login` profile |
 | `LORA_NEWS_CLAUDE_MODEL` | Default `claude-opus-5` |
 | `LORA_NEWS_CLAUDE_MAX_ITEMS` | Max items summarised per run (default 60) |
 | `LORA_NEWS_NEW_WINDOW_HOURS` | How long an item stays "new" after first sighting (default 72) |
 | `LORA_NEWS_HF_LIMIT` | Items per Hugging Face query (default 100) |
+| `LORA_NEWS_GH_PER_PAGE` | Items per GitHub query (default 50) |
 | `LORA_NEWS_README_MAX` | Max model cards (READMEs) fetched per run (default 40) |
+| `LORA_NEWS_HTTP_TIMEOUT` | Per-request timeout in seconds (default 30) |
+| `LORA_NEWS_REFRESH_DEADLINE` | Give up on a source after this many seconds (default 180) |
 | `LORA_NEWS_PORT` / `LORA_NEWS_HOST` | Port / bind address |
 | `LORA_NEWS_DATA_DIR` | Cache folder (default `./data`) |
 
@@ -206,7 +224,13 @@ static/                 # front-end (no dependencies, EN/KO toggle)
 tests/                  # unit tests + sample data
 docs/                   # screenshots
 .env.example            # optional settings template (copy to .env)
+.github/workflows/      # CI: unit tests on Python 3.10-3.13
+LICENSE                 # MIT
 ```
+
+### License
+
+MIT. See [LICENSE](LICENSE).
 
 ---
 
@@ -267,7 +291,6 @@ Claude 요약을 쓰려면 `pip install -r requirements-optional.txt` 도 실행
 run.bat
 
 # macOS / Linux
-chmod +x run.sh
 ./run.sh
 
 # 공통
@@ -296,6 +319,11 @@ git pull
 | `--refresh-only` | 서버 없이 수집만 하고 종료 (작업 스케줄러/cron 용) |
 | `--demo` | 네트워크 없이 샘플 데이터로 UI 확인 |
 | `--port 9000` | 포트 변경 (기본 8765) |
+| `--host 0.0.0.0` | 바인드 주소 (기본 127.0.0.1, 로컬 전용) |
+| `-v`, `--verbose` | 상세 로그 |
+| `--version` | 버전 출력 후 종료 |
+
+`--refresh-only` 는 보여줄 항목이 있으면 `0`, 하나도 못 모으면 `1` 로 끝납니다.
 
 ### 문제 해결
 
@@ -306,6 +334,8 @@ git pull
 | 화면에 "GitHub API 요청 한도 초과" | 비로그인 검색은 분당 10회: `.env` 에 `GITHUB_TOKEN` 추가하거나 1분 뒤 새로고침 |
 | "Civitai 접근 거부(403)" | Cloudflare 차단: `.env` 에 `CIVITAI_API_KEY` 추가. 그동안은 이전 캐시 유지 |
 | 첫 실행에 화면이 비어 있음 | 수집이 진행 중(오른쪽 위 회전 표시). 끝날 때까지 기다리면 됨 |
+| 세 소스가 모두 실패 | 오프라인이거나 프록시에 막힌 상태입니다. 이전 캐시를 유지하며, `python app.py --demo` 로 화면만 확인할 수 있습니다 |
+| 썸네일이 안 보임 | 이미지는 Civitai CDN 에서 불러옵니다. 막혀 있으면 카드에서 이미지만 빠집니다 |
 | 네트워크 없이 화면만 확인 | `python app.py --demo` |
 
 ### 기능
@@ -316,6 +346,8 @@ git pull
 - **분류**: 베이스 모델 / 용도별 칩 필터, 용도별·베이스 모델별·소스별 묶어보기.
   워크플로우는 이미지 생성 · 영상 생성 · 편집/인페인팅 · 업스케일/보정 · 컨트롤넷/포즈 · 캐릭터 일관성 · 학습/도구 · 모음/템플릿으로 분류
 - **한/영 요약**: 이름·태그·모델 카드에서 규칙으로 뽑은 요약을 두 언어로 생성 (예: `FLUX.1 기반 스타일/화풍 LoRA · 파스텔톤 · 트리거: xyz`)
+- **미리보기 썸네일**: Civitai 항목은 미리보기 이미지를 함께 보여줍니다 (전체 이용가 이미지만, NSFW 항목은 표시하지 않음)
+- **소스 선택**: `LORA_NEWS_SOURCES=huggingface,github` 로 막혀 있는 소스를 건너뛸 수 있습니다
 - **트리거 워드**: HF 모델 카드의 `instance_prompt` / "Trigger words:" 문구, Civitai의 `trainedWords` 자동 추출, 클릭하면 복사
 - **정렬/검색**: 신규 우선, 등록일, 수정일, 다운로드, 좋아요/스타, 이름 · 텍스트 검색 · NSFW 숨기기(기본)
 - **캐시**: 결과는 `data/` 폴더에 저장되어 네트워크가 안 되어도 마지막 결과를 볼 수 있음
@@ -332,13 +364,17 @@ git pull
 | `CIVITAI_API_KEY` | Civitai API 키 (403/한도 오류가 나면 설정해 보세요) |
 | `LORA_NEWS_CIVITAI_NSFW` | `1` 이면 Civitai에서 NSFW 항목도 받아옴 (기본은 제외, 받아온 뒤에도 화면에서 숨기기 가능) |
 | `LORA_NEWS_CIVITAI_LIMIT` | Civitai 쿼리당 개수 (기본 100, 최대 100) |
+| `LORA_NEWS_SOURCES` | 일부 소스만 사용, 예: `huggingface,github` (`hf` / `gh` / `cv` 도 인식) |
 | `ANTHROPIC_API_KEY` | 설정하면 Claude로 요약 생성. `pip install anthropic` 필요 |
 | `LORA_NEWS_CLAUDE` | `0` 으로 두면 키가 있어도 Claude 요약 끔, `1` 이면 `ant auth login` 프로필로도 사용 |
 | `LORA_NEWS_CLAUDE_MODEL` | 기본 `claude-opus-5` |
 | `LORA_NEWS_CLAUDE_MAX_ITEMS` | 한 번 실행에 요약할 최대 개수 (기본 60) |
 | `LORA_NEWS_NEW_WINDOW_HOURS` | 처음 발견 후 신규로 표시할 시간 (기본 72) |
 | `LORA_NEWS_HF_LIMIT` | Hugging Face 쿼리당 개수 (기본 100) |
+| `LORA_NEWS_GH_PER_PAGE` | GitHub 쿼리당 개수 (기본 50) |
 | `LORA_NEWS_README_MAX` | 모델 카드(README)를 읽어올 최대 개수 (기본 40) |
+| `LORA_NEWS_HTTP_TIMEOUT` | 요청 하나의 제한 시간(초, 기본 30) |
+| `LORA_NEWS_REFRESH_DEADLINE` | 한 소스를 이 시간(초)까지만 기다림 (기본 180) |
 | `LORA_NEWS_PORT` / `LORA_NEWS_HOST` | 포트 / 바인드 주소 |
 | `LORA_NEWS_DATA_DIR` | 캐시 폴더 (기본 `./data`) |
 
@@ -403,4 +439,10 @@ static/                 # 프론트엔드 (의존성 없음, 한/영 토글)
 tests/                  # 단위 테스트 + 샘플 데이터
 docs/                   # 스크린샷
 .env.example            # 선택 설정 템플릿 (.env 로 복사해서 사용)
+.github/workflows/      # CI: Python 3.10~3.13 에서 단위 테스트
+LICENSE                 # MIT
 ```
+
+### 라이선스
+
+MIT 입니다. [LICENSE](LICENSE) 를 참고하세요.

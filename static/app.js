@@ -20,6 +20,13 @@
     subtitle: { ko: "ComfyUI용 LoRA · 워크플로우 — Hugging Face + GitHub + Civitai 신규/기존 모아보기",
                 en: "LoRAs and workflows for ComfyUI — new and existing, from Hugging Face + GitHub + Civitai" },
     refresh: { ko: "새로고침", en: "Refresh" },
+    skip: { ko: "본문으로 건너뛰기", en: "Skip to content" },
+    facets_summary: { ko: "상세 필터", en: "More filters" },
+    clear_filters: { ko: "필터 초기화", en: "Clear filters" },
+    sort_label: { ko: "정렬", en: "Sort" },
+    group_label: { ko: "묶기", en: "Group" },
+    tab_label: { ko: "종류 선택", en: "Item type" },
+    preview_of: { ko: "{name} 미리보기", en: "Preview of {name}" },
     lang_switch: { ko: "EN", en: "한국어" },
     loading: { ko: "불러오는 중…", en: "Loading…" },
     refreshing: { ko: "새로고침 중…", en: "Refreshing…" },
@@ -30,7 +37,8 @@
     error_prefix: { ko: "오류: ", en: "Error: " },
     claude_unavailable: { ko: "Claude 요약 사용 불가: ", en: "Claude summaries unavailable: " },
     server_unreachable: { ko: "서버에 연결할 수 없습니다: ", en: "Cannot reach the server: " },
-    refresh_failed: { ko: "새로고침 요청 실패: ", en: "Refresh request failed: " },
+    refresh_failed: { ko: "서버에 연결할 수 없습니다. 앱이 아직 실행 중인지 확인하세요.",
+                      en: "Could not reach the server. Check that the app is still running." },
     search_ph: { ko: "검색: 이름, 태그, 설명, 트리거 워드…", en: "Search: name, tags, description, trigger words…" },
     sort_new: { ko: "신규 우선", en: "New first" },
     sort_created: { ko: "등록일 최신순", en: "Newest added" },
@@ -203,7 +211,7 @@
       renderStatus();
       schedulePoll();
     } catch (e) {
-      state.status.last_error = t("refresh_failed") + e;
+      state.status.last_error = t("refresh_failed") + " (" + e + ")";
       renderStatus();
     } finally {
       setTimeout(() => { btn.disabled = false; }, 1500);
@@ -211,13 +219,13 @@
   }
 
   // ---------------------------------------------------------------- filtering
-  function visibleItems() {
+  function applyFilters(except) {
     const f = state.filters;
     const q = f.q.trim().toLowerCase();
-    const list = kindItems().filter((it) => {
-      if (f.source !== "all" && it.source !== f.source) return false;
-      if (f.base && it.base_model !== f.base) return false;
-      if (f.cat && it.category !== f.cat) return false;
+    return kindItems().filter((it) => {
+      if (except !== "source" && f.source !== "all" && it.source !== f.source) return false;
+      if (except !== "base" && f.base && it.base_model !== f.base) return false;
+      if (except !== "cat" && f.cat && it.category !== f.cat) return false;
       if (f.onlyNew && !it.is_new) return false;
       if (f.recent7 && !daysAgo(it.created_at, 7)) return false;
       if (f.hideNsfw && it.nsfw) return false;
@@ -229,6 +237,15 @@
       }
       return true;
     });
+  }
+
+  function hasActiveFilters() {
+    const f = state.filters;
+    return !!(f.q.trim() || f.source !== "all" || f.base || f.cat || f.onlyNew || f.recent7);
+  }
+
+  function visibleItems() {
+    const list = applyFilters(null);
     const by = {
       new: (a, b) => (b.found_this_run - a.found_this_run) || (b.is_new - a.is_new) || cmpDate(b.created_at, a.created_at),
       created: (a, b) => cmpDate(b.created_at, a.created_at),
@@ -237,7 +254,7 @@
       likes: (a, b) => (b.likes || 0) - (a.likes || 0) || (b.downloads || 0) - (a.downloads || 0),
       name: (a, b) => a.name.localeCompare(b.name),
     };
-    list.sort(by[f.sort] || by.new);
+    list.sort(by[state.filters.sort] || by.new);
     return list;
   }
 
@@ -257,6 +274,10 @@
     document.querySelectorAll("[data-i18n]").forEach((el) => { el.textContent = t(el.dataset.i18n); });
     $("#lang-btn").textContent = t("lang_switch");
     $("#search").placeholder = t("search_ph");
+    $("#search").setAttribute("aria-label", t("search_ph"));
+    $("#sort").setAttribute("aria-label", t("sort_label"));
+    $("#group").setAttribute("aria-label", t("group_label"));
+    $("#tabs").setAttribute("aria-label", t("tab_label"));
     const opts = (pairs, current) => pairs.map(([v, k]) => `<option value="${v}"${v === current ? " selected" : ""}>${esc(t(k))}</option>`).join("");
     $("#sort").innerHTML = opts([["new", "sort_new"], ["created", "sort_created"], ["updated", "sort_updated"],
       ["downloads", "sort_downloads"], ["likes", "sort_likes"], ["name", "sort_name"]], state.filters.sort);
@@ -292,14 +313,17 @@
     const box = $("#errors");
     box.hidden = errs.length === 0;
     box.textContent = errs.join("\n");
-    $("#refresh-btn").disabled = !!st.refreshing;
+    const btn = $("#refresh-btn");
+    btn.disabled = !!st.refreshing;
+    btn.textContent = st.refreshing ? t("refreshing") : t("refresh");
   }
 
   function renderTabs() {
     const counts = {};
     state.items.forEach((it) => { const k = it.kind || "lora"; counts[k] = (counts[k] || 0) + 1; });
     $("#tabs").innerHTML = KINDS.map(([k, key]) =>
-      `<button class="tab${state.filters.kind === k ? " active" : ""}" data-kind="${k}">${esc(t(key))}<small>${counts[k] || 0}</small></button>`
+      `<button type="button" role="tab" class="tab" aria-selected="${state.filters.kind === k ? "true" : "false"}" ` +
+      `data-kind="${k}">${esc(t(key))}<small>${counts[k] || 0}</small></button>`
     ).join("");
   }
 
@@ -310,9 +334,6 @@
       [t("stat_total"), items.length, ""],
       [t("stat_new"), n((it) => it.is_new), "new"],
       [t("stat_found"), n((it) => it.found_this_run), "found"],
-      ["Hugging Face", n((it) => it.source === "huggingface"), ""],
-      ["GitHub", n((it) => it.source === "github"), ""],
-      ["Civitai", n((it) => it.source === "civitai"), ""],
     ];
     const claude = n((it) => it.summary_source === "claude");
     if (claude) cells.push([t("stat_claude"), claude, ""]);
@@ -320,7 +341,9 @@
   }
 
   function chip(label, count, active, attr) {
-    return `<span class="chip${active ? " active" : ""}" ${attr}>${esc(label)}${count != null ? `<small>${esc(count)}</small>` : ""}</span>`;
+    const empty = count === 0 ? " empty" : "";
+    return `<button type="button" class="chip${empty}" aria-pressed="${active ? "true" : "false"}" ${attr}>` +
+      `${esc(label)}${count != null ? `<small>${esc(count)}</small>` : ""}</button>`;
   }
 
   function facetCounts(items, field) {
@@ -331,18 +354,24 @@
 
   function renderFacets() {
     const f = state.filters;
-    const items = kindItems();
-    const counts = { all: items.length };
-    items.forEach((it) => { counts[it.source] = (counts[it.source] || 0) + 1; });
+    // 각 필터의 개수는 "그 필터를 뺀 나머지 조건"을 적용한 결과에서 센다.
+    // 그래야 칩에 적힌 숫자가 실제로 눌렀을 때 나오는 개수와 같다.
+    const forSource = applyFilters("source");
+    const counts = { all: forSource.length };
+    forSource.forEach((it) => { counts[it.source] = (counts[it.source] || 0) + 1; });
     $("#source-chips").innerHTML = SOURCES.map(([k, l]) => chip(l || t("src_all"), counts[k] || 0, f.source === k, `data-source="${k}"`)).join("");
 
-    const bases = facetCounts(items, "base_model").sort((a, b) => b[1] - a[1]);
-    $("#base-chips").innerHTML = chip(t("all"), null, !f.base, `data-base=""`) +
+    const forBase = applyFilters("base");
+    const bases = facetCounts(forBase, "base_model").sort((a, b) => b[1] - a[1]);
+    $("#base-chips").innerHTML = chip(t("all"), forBase.length, !f.base, `data-base=""`) +
       bases.map(([b, n]) => chip(baseLabel(b), n, f.base === b, `data-base="${esc(b)}"`)).join("");
 
-    const cats = facetCounts(items, "category").sort((a, b) => CAT_ORDER.indexOf(a[0]) - CAT_ORDER.indexOf(b[0]));
-    $("#cat-chips").innerHTML = chip(t("all"), null, !f.cat, `data-cat=""`) +
+    const forCat = applyFilters("cat");
+    const cats = facetCounts(forCat, "category").sort((a, b) => CAT_ORDER.indexOf(a[0]) - CAT_ORDER.indexOf(b[0]));
+    $("#cat-chips").innerHTML = chip(t("all"), forCat.length, !f.cat, `data-cat=""`) +
       cats.map(([c, n]) => chip(catLabel(c), n, f.cat === c, `data-cat="${esc(c)}"`)).join("");
+
+    $("#clear-btn").hidden = !hasActiveFilters();
 
     $("#search").value = f.q;
     $("#only-new").checked = f.onlyNew;
@@ -358,16 +387,20 @@
     return `<span class="badge gh">GitHub</span>`;
   }
 
+  function metric(icon, label, value) {
+    return `<span aria-label="${esc(label)}: ${esc(fmtNum(value))}" title="${esc(label)}">` +
+      `<span aria-hidden="true">${icon}</span> ${esc(fmtNum(value))}</span>`;
+  }
+
   function metrics(it) {
-    if (it.source === "github") return `<span title="${t("stars")}">★ ${fmtNum(it.likes)}</span><span title="${t("forks")}">⑂ ${fmtNum(it.downloads)}</span>`;
-    if (it.source === "civitai") return `<span title="${t("downloads")}">⬇ ${fmtNum(it.downloads)}</span><span title="${t("likes")}">👍 ${fmtNum(it.likes)}</span>`;
-    return `<span title="${t("downloads")}">⬇ ${fmtNum(it.downloads)}</span><span title="${t("likes")}">♥ ${fmtNum(it.likes)}</span>`;
+    if (it.source === "github") return metric("★", t("stars"), it.likes) + metric("⑂", t("forks"), it.downloads);
+    return metric("⬇", t("downloads"), it.downloads) + metric("♥", t("likes"), it.likes);
   }
 
   function card(it) {
     const isWf = (it.kind || "lora") === "workflow";
     const triggers = (it.trigger_words || []).length
-      ? `<div class="triggers">${t("trigger")} ${it.trigger_words.map((w) => `<span class="trigger" data-copy="${esc(w)}" title="${t("copy_hint")}">${esc(w)}</span>`).join("")}</div>`
+      ? `<div class="triggers">${t("trigger")} ${it.trigger_words.map((w) => `<button type="button" class="trigger" data-copy="${esc(w)}" title="${t("copy_hint")}">${esc(w)}</button>`).join("")}</div>`
       : "";
     const files = (it.files || []).length
       ? `<div class="files">${it.files.map((f) => `<code>${esc(f)}</code>`).join("")}</div>` : "";
@@ -378,7 +411,11 @@
     const details = (desc || files)
       ? `<details><summary>${t("details")}${fileLabel}</summary>${desc ? `<p>${esc(desc)}</p>` : ""}${files}</details>`
       : "";
+    const thumb = it.thumb
+      ? `<img class="thumb" src="${esc(it.thumb)}" alt="${esc(t("preview_of", { name: it.name }))}" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">`
+      : "";
     return `<article class="card${it.is_new ? " new" : ""}">
+      ${thumb}
       <div class="card-top">
         <div class="badges">
           ${sourceBadge(it)}
@@ -405,10 +442,13 @@
     const total = kindItems().length;
     $("#result-count").textContent = t("count_of", { n: list.length, total, kind: t(f.kind === "workflow" ? "kind_workflow" : "kind_lora") });
     if (!list.length) {
-      $("#list").innerHTML = `<div class="empty">${total ? t("empty_filtered") : (state.status.refreshing ? t("empty_loading") : t("empty_none"))}</div>`;
+      const rescue = hasActiveFilters() ? `<button type="button" class="btn ghost" data-clear>${esc(t("clear_filters"))}</button>` : "";
+      $("#list").className = "list";
+      $("#list").innerHTML = `<div class="empty"><span>${total ? t("empty_filtered") : (state.status.refreshing ? t("empty_loading") : t("empty_none"))}</span>${rescue}</div>`;
       return;
     }
     if (f.group === "none") {
+      $("#list").className = "list";
       $("#list").innerHTML = list.map(card).join("");
       return;
     }
@@ -425,14 +465,25 @@
     if (f.group === "category") keys.sort((a, b) => CAT_ORDER.indexOf(a) - CAT_ORDER.indexOf(b));
     else keys.sort((a, b) => groups.get(b).length - groups.get(a).length);
     const labelOf = (k) => f.group === "category" ? catLabel(k) : (f.group === "base_model" ? baseLabel(k) : k);
+    $("#list").className = "list grouped";
     $("#list").innerHTML = keys.map((k) =>
-      `<h2 class="group-title">${esc(labelOf(k))}<small>${groups.get(k).length}</small></h2>` + groups.get(k).map(card).join("")
+      `<section class="group"><h2 class="group-title">${esc(labelOf(k))}<small>${groups.get(k).length}</small></h2>` +
+      `<div class="group-grid">${groups.get(k).map(card).join("")}</div></section>`
     ).join("");
   }
 
   // ---------------------------------------------------------------- events
+  function clearFilters() {
+    Object.assign(state.filters, { q: "", source: "all", base: null, cat: null, onlyNew: false, recent7: false });
+    savePrefs();
+    renderFacets();
+    renderList();
+    $("#search").focus();
+  }
+
   function bind() {
     $("#refresh-btn").addEventListener("click", refresh);
+    $("#clear-btn").addEventListener("click", clearFilters);
     $("#lang-btn").addEventListener("click", () => {
       state.filters.lang = lang() === "ko" ? "en" : "ko";
       savePrefs(); renderAll();
@@ -447,7 +498,7 @@
     let timer = null;
     $("#search").addEventListener("input", (e) => {
       clearTimeout(timer);
-      timer = setTimeout(() => { state.filters.q = e.target.value; renderList(); }, 120);
+      timer = setTimeout(() => { state.filters.q = e.target.value; renderFacets(); renderList(); }, 120);
     });
     $("#sort").addEventListener("change", (e) => { state.filters.sort = e.target.value; savePrefs(); renderList(); });
     $("#group").addEventListener("change", (e) => { state.filters.group = e.target.value; savePrefs(); renderList(); });
@@ -467,6 +518,7 @@
       state.filters.cat = el.dataset.cat || null; savePrefs(); renderFacets(); renderList();
     });
     $("#list").addEventListener("click", async (e) => {
+      if (e.target.closest("[data-clear]")) { clearFilters(); return; }
       const el = e.target.closest("[data-copy]"); if (!el) return;
       try {
         await navigator.clipboard.writeText(el.dataset.copy);
@@ -476,6 +528,7 @@
     });
   }
 
+  if (window.matchMedia("(max-width: 720px)").matches) $("#facets").open = false;
   bind();
   applyStatic();
   $("#status-text").textContent = t("loading");

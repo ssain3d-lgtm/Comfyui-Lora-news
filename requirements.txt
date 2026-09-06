@@ -1,0 +1,5 @@
+# No runtime dependencies: the app uses only the Python standard library (3.10+).
+# 실행에 필요한 외부 패키지가 없습니다. Python 3.10 이상 표준 라이브러리만 사용합니다.
+#
+# Optional extras are listed in requirements-optional.txt (Claude summaries).
+# 선택 기능(Claude 요약)은 requirements-optional.txt 를 참고하세요.

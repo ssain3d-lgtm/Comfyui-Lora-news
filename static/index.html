@@ -8,22 +8,26 @@
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
+<a class="skip" href="#list" data-i18n="skip">본문으로 건너뛰기</a>
+
 <header class="top">
   <div class="brand">
-    <span class="logo">◆</span>
+    <span class="logo" aria-hidden="true">◆</span>
     <div>
       <h1 data-i18n="title">LoRA 뉴스</h1>
       <div class="sub" data-i18n="subtitle">ComfyUI용 LoRA · 워크플로우 — Hugging Face + GitHub + Civitai 신규/기존 모아보기</div>
     </div>
   </div>
   <div class="status">
-    <span id="status-text" class="status-text">…</span>
-    <button id="lang-btn" class="btn ghost lang" title="Language / 언어">EN</button>
-    <button id="refresh-btn" class="btn" data-i18n="refresh">새로고침</button>
+    <span id="status-text" class="status-text" aria-live="polite">…</span>
+    <button id="lang-btn" type="button" class="btn ghost lang" title="Language / 언어">EN</button>
+    <button id="refresh-btn" type="button" class="btn" data-i18n="refresh">새로고침</button>
   </div>
 </header>
 
-<nav class="tabs" id="tabs"></nav>
+<div id="errors" class="errors" role="alert" hidden></div>
+
+<nav class="tabs" id="tabs" role="tablist"></nav>
 <section class="stats" id="stats"></section>
 
 <section class="filters">
@@ -38,12 +42,18 @@
     <label class="check"><input type="checkbox" id="recent7"> <span data-i18n="recent7">최근 7일 등록</span></label>
     <label class="check"><input type="checkbox" id="hide-nsfw" checked> <span data-i18n="hide_nsfw">NSFW 숨기기</span></label>
   </div>
-  <div class="facet"><span class="facet-label" data-i18n="facet_base">베이스 모델</span><div class="chips" id="base-chips"></div></div>
-  <div class="facet"><span class="facet-label" data-i18n="facet_cat">용도</span><div class="chips" id="cat-chips"></div></div>
+  <details class="facets" id="facets" open>
+    <summary data-i18n="facets_summary">상세 필터</summary>
+    <div class="facet"><span class="facet-label" data-i18n="facet_base">베이스 모델</span><div class="chips" id="base-chips"></div></div>
+    <div class="facet"><span class="facet-label" data-i18n="facet_cat">용도</span><div class="chips" id="cat-chips"></div></div>
+  </details>
 </section>
 
-<div id="errors" class="errors" hidden></div>
-<div id="result-count" class="result-count"></div>
+<div class="result-row">
+  <span id="result-count" class="result-count" aria-live="polite"></span>
+  <button id="clear-btn" type="button" class="btn ghost small" hidden data-i18n="clear_filters">필터 초기화</button>
+</div>
+
 <main id="list" class="list"></main>
 
 <footer class="foot" id="footer"></footer>

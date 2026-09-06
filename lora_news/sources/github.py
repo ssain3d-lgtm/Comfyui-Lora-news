@@ -83,7 +83,9 @@ def fetch(per_page: int = 50, token: str = "", timeout: int = 30, workers: int =
             try:
                 kind, data = fut.result()
             except http.HttpError as e:
-                m = msg("gh_rate_limited") if e.status in (403, 429) else msg("gh_failed", err=e)
+                rate_limited = e.status == 429 or (e.status == 403 and "rate limit" in (e.body or "").lower())
+                m = msg("gh_rate_limited") if rate_limited else (
+                    msg("gh_forbidden") if e.status == 403 else msg("gh_failed", err=e))
                 log.warning(m["ko"])
                 if m not in errors:
                     errors.append(m)
@@ -92,7 +94,13 @@ def fetch(per_page: int = 50, token: str = "", timeout: int = 30, workers: int =
                 log.warning("GitHub 요청 실패: %s", e)
                 errors.append(msg("gh_failed", err=e))
                 continue
-            for r in (data or {}).get("items") or []:
+            rows = data.get("items") if isinstance(data, dict) else None
+            if not isinstance(rows, list):
+                m = msg("gh_failed", err=f"unexpected response: {str(data)[:120]}")
+                if m not in errors:
+                    errors.append(m)
+                continue
+            for r in rows:
                 try:
                     item = parse_repo(r, kind)
                 except Exception:  # noqa: BLE001

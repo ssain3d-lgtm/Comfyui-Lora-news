@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""LoRA 뉴스 - 실행하면 최신 LoRA 목록을 받아와 브라우저로 보여주는 로컬 웹앱.
+"""LoRA News / LoRA 뉴스 - a local web app for ComfyUI LoRAs and workflows.
 
-    python app.py                # 서버 실행 + 브라우저 열기 + 백그라운드 새로고침
-    python app.py --refresh-only # 브라우저 없이 수집만 하고 종료 (스케줄러용)
-    python app.py --no-refresh   # 캐시된 데이터만 표시
-    python app.py --demo         # 네트워크 없이 샘플 데이터로 UI 확인
+    python app.py                # serve + open browser + refresh in the background
+    python app.py --refresh-only # fetch only, no server (for cron / Task Scheduler)
+    python app.py --no-refresh   # serve the cached data only
+    python app.py --demo         # sample data, no network needed
 """
 from __future__ import annotations
 
@@ -23,6 +23,7 @@ from urllib.parse import urlparse
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 
+from lora_news import __version__  # noqa: E402
 from lora_news.config import Config  # noqa: E402
 from lora_news.service import NewsService  # noqa: E402
 
@@ -30,11 +31,11 @@ STATIC_DIR = ROOT / "static"
 log = logging.getLogger("lora_news.app")
 
 
-def make_handler(service: NewsService):
+def make_handler(service: NewsService, allowed_hosts: set[str]):
     class Handler(BaseHTTPRequestHandler):
-        server_version = "LoraNews/0.1"
+        server_version = f"LoraNews/{__version__}"
 
-        def log_message(self, fmt, *args):  # 조용히
+        def log_message(self, fmt, *args):  # quiet
             log.debug("%s - %s", self.address_string(), fmt % args)
 
         # -- helpers ---------------------------------------------------
@@ -46,6 +47,22 @@ def make_handler(service: NewsService):
             self.send_header("Cache-Control", "no-store")
             self.end_headers()
             self.wfile.write(body)
+
+        def _host_ok(self) -> bool:
+            """Reject DNS-rebinding: only localhost names may address this server."""
+            host = (self.headers.get("Host") or "").split(":")[0].strip("[]").lower()
+            return host in allowed_hosts
+
+        def _same_origin(self) -> bool:
+            """Block cross-site writes. A browser always sends one of these on a cross-site POST."""
+            site = (self.headers.get("Sec-Fetch-Site") or "").lower()
+            if site and site not in ("same-origin", "same-site", "none"):
+                return False
+            origin = self.headers.get("Origin")
+            if origin:
+                netloc = urlparse(origin).hostname or ""
+                return netloc.lower() in allowed_hosts
+            return True
 
         def _static(self, rel: str) -> None:
             rel = rel.lstrip("/") or "index.html"
@@ -66,6 +83,9 @@ def make_handler(service: NewsService):
 
         # -- routes ----------------------------------------------------
         def do_GET(self):  # noqa: N802
+            if not self._host_ok():
+                self.send_error(HTTPStatus.FORBIDDEN, "Unrecognised Host header")
+                return
             path = urlparse(self.path).path
             if path == "/api/items":
                 self._json(service.snapshot())
@@ -79,6 +99,12 @@ def make_handler(service: NewsService):
                 self.send_error(HTTPStatus.NOT_FOUND)
 
         def do_POST(self):  # noqa: N802
+            if not self._host_ok():
+                self.send_error(HTTPStatus.FORBIDDEN, "Unrecognised Host header")
+                return
+            if not self._same_origin():
+                self.send_error(HTTPStatus.FORBIDDEN, "Cross-site request blocked")
+                return
             path = urlparse(self.path).path
             if path == "/api/refresh":
                 started = service.start_refresh()
@@ -90,7 +116,7 @@ def make_handler(service: NewsService):
 
 
 def load_demo(service: NewsService) -> None:
-    """네트워크 없이 샘플 데이터로 동작 (UI 점검용)."""
+    """Run on bundled sample data, no network. / 네트워크 없이 샘플 데이터로 동작."""
     from lora_news.classify import classify
     from lora_news.models import LoraItem
 
@@ -104,48 +130,69 @@ def load_demo(service: NewsService) -> None:
     service.status["counts"] = service._counts(items)
 
 
+def build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(
+        prog="app.py",
+        description="LoRA News - ComfyUI LoRAs and workflows from Hugging Face, GitHub and Civitai. "
+                    "/ ComfyUI용 LoRA·워크플로우 모아보기.",
+    )
+    p.add_argument("--port", type=int, default=None, help="Port, default 8765 / 포트 (기본 8765)")
+    p.add_argument("--host", default=None, help="Bind address, default 127.0.0.1 / 바인드 주소")
+    p.add_argument("--no-browser", action="store_true", help="Do not open the browser / 브라우저 자동 열기 안 함")
+    p.add_argument("--no-refresh", action="store_true", help="Serve cached data only / 캐시만 표시")
+    p.add_argument("--refresh-only", action="store_true", help="Fetch and exit, no server / 수집만 하고 종료")
+    p.add_argument("--demo", action="store_true", help="Sample data, no network / 샘플 데이터로 실행")
+    p.add_argument("-v", "--verbose", action="store_true", help="Debug logging / 상세 로그")
+    p.add_argument("--version", action="version", version=f"LoRA News {__version__}")
+    return p
+
+
 def main(argv=None) -> int:
-    parser = argparse.ArgumentParser(description="LoRA 뉴스 웹앱")
-    parser.add_argument("--port", type=int, default=None, help="포트 (기본 8765)")
-    parser.add_argument("--host", default=None, help="바인드 주소 (기본 127.0.0.1)")
-    parser.add_argument("--no-browser", action="store_true", help="브라우저 자동 열기 안 함")
-    parser.add_argument("--no-refresh", action="store_true", help="시작 시 새로고침 안 함 (캐시만 표시)")
-    parser.add_argument("--refresh-only", action="store_true", help="수집만 하고 서버 없이 종료")
-    parser.add_argument("--demo", action="store_true", help="샘플 데이터로 실행 (네트워크 불필요)")
-    parser.add_argument("-v", "--verbose", action="store_true")
-    args = parser.parse_args(argv)
+    args = build_parser().parse_args(argv)
 
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S",
     )
     config = Config()
-    if args.port:
+    if args.port is not None:
         config.port = args.port
-    if args.host:
+    if args.host is not None:
         config.host = args.host
     service = NewsService(config)
 
     if args.refresh_only:
         counts = service.refresh()
+        total = counts.get("total") or 0
+        failed = [e for e in service.status["errors"] if isinstance(e, dict)]
+        print(f"{total} items collected / {total}개 수집" + (f", {len(failed)} problem(s)" if failed else ""))
         print(json.dumps({"counts": counts, "errors": service.status["errors"]}, ensure_ascii=False, indent=1))
-        return 0 if counts.get("total") else 1
+        return 0 if total else 1
 
     if args.demo:
         load_demo(service)
     elif not args.no_refresh:
         service.start_refresh()
 
-    server = ThreadingHTTPServer((config.host, config.port), make_handler(service))
+    allowed_hosts = {"127.0.0.1", "localhost", "::1", "0.0.0.0", config.host.lower()}
+    try:
+        server = ThreadingHTTPServer((config.host, config.port), make_handler(service, allowed_hosts))
+    except OSError as e:
+        print(f"\n  Cannot listen on {config.host}:{config.port} - {e}")
+        print(f"  {config.host}:{config.port} 에서 서버를 열 수 없습니다.")
+        print("  Another program may be using the port. Try: python app.py --port 9000")
+        print("  다른 프로그램이 포트를 쓰고 있을 수 있습니다. 예: python app.py --port 9000\n")
+        return 2
     server.daemon_threads = True
-    url = f"http://{config.host}:{config.port}/"
-    print(f"\n  LoRA 뉴스 실행 중: {url}\n  종료: Ctrl+C\n")
+    url = f"http://{config.host}:{server.server_port}/"
+    print(f"\n  LoRA News running at / 실행 중: {url}")
+    print("  Stop with Ctrl+C / 종료: Ctrl+C\n")
     if not args.no_browser:
         threading.Timer(0.8, lambda: webbrowser.open(url)).start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        print("\n종료합니다.")
+        print("\nStopped. / 종료합니다.")
     finally:
         server.server_close()
     return 0

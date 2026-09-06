@@ -34,6 +34,8 @@ class Store:
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as f:
                 json.dump(obj, f, ensure_ascii=False, indent=1)
+                f.flush()
+                os.fsync(f.fileno())   # 이름 바꾸기 전에 내용이 디스크에 남도록
             os.replace(tmp, path)
         finally:
             if os.path.exists(tmp):

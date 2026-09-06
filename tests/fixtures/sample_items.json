@@ -330,7 +330,8 @@
   "likes": 3100,
   "files": [
    "add-detail-xl.safetensors"
-  ]
+  ],
+  "thumb": "https://image.civitai.com/example/detail-tweaker.jpeg"
  },
  {
   "key": "civitai:1002",
@@ -405,7 +406,8 @@
   "likes": 40,
   "files": [
    "kontext_inpaint_upscale_v1.2.json"
-  ]
+  ],
+  "thumb": "https://image.civitai.com/example/kontext-inpaint.jpeg"
  },
  {
   "key": "civitai:2002",

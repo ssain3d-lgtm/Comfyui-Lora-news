@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FuturesTimeout
 from datetime import datetime, timedelta, timezone
 
 from .classify import BASE_MODEL_EN, CATEGORY_EN, classify
@@ -64,13 +65,36 @@ class NewsService:
             "counts": {},
         }
         cache = self.store.load_cache()
-        self.items: list[LoraItem] = [LoraItem.from_dict(d) for d in cache.get("items", []) if isinstance(d, dict)]
+        self.items: list[LoraItem] = self._load_items(cache.get("items"))
+        self._refresh_new_flags(self.items, _now())
         self.status["last_refresh"] = cache.get("updated_at")
         self.status["counts"] = cache.get("counts", self._counts(self.items))
         if cache.get("claude"):
             self.status["claude"].update({k: v for k, v in cache["claude"].items() if k in ("summarized",)})
 
     # ------------------------------------------------------------------
+    @staticmethod
+    def _load_items(rows) -> list[LoraItem]:
+        """캐시에서 항목을 복원한다. 망가진 항목 하나가 앱 전체를 막지 않도록 건너뛴다."""
+        items: list[LoraItem] = []
+        skipped = 0
+        for row in rows or []:
+            try:
+                items.append(LoraItem.from_dict(row))
+            except Exception:  # noqa: BLE001
+                skipped += 1
+        if skipped:
+            log.warning("캐시에서 손상된 항목 %d개를 건너뛰었습니다", skipped)
+        return items
+
+    def _refresh_new_flags(self, items: list[LoraItem], now: datetime) -> None:
+        """캐시에서 읽은 신규 배지를 현재 시각 기준으로 다시 계산한다."""
+        window = timedelta(hours=self.config.new_window_hours)
+        for it in items:
+            first_dt = _parse_dt(it.first_seen)
+            it.is_new = bool(first_dt and now - first_dt <= window)
+            it.found_this_run = False   # 이전 실행의 흔적이지 이번 실행의 발견이 아니다
+
     def _set_progress(self, message, **kw) -> None:
         """message: i18n 키(+포맷 인자) 또는 이미 만들어진 메시지 dict, None 이면 지움."""
         if isinstance(message, str):
@@ -113,41 +137,61 @@ class NewsService:
         started = _now()
         self._set_progress("fetching")
 
-        with ThreadPoolExecutor(max_workers=3) as pool:
-            hf_fut = pool.submit(self._hf_fetch)
-            gh_fut = pool.submit(self._gh_fetch)
-            cv_fut = pool.submit(self._cv_fetch)
-            hf_items, hf_errors = self._safe_result(hf_fut, "Hugging Face")
-            gh_items, gh_errors = self._safe_result(gh_fut, "GitHub")
-            cv_items, cv_errors = self._safe_result(cv_fut, "Civitai")
-        errors = list(hf_errors) + list(gh_errors) + list(cv_errors)
+        enabled = self.config.sources
+        plan = [("huggingface", "Hugging Face", self._hf_fetch),
+                ("github", "GitHub", self._gh_fetch),
+                ("civitai", "Civitai", self._cv_fetch)]
+        plan = [row for row in plan if row[0] in enabled]
+        deadline = self.config.refresh_deadline
+
+        results: dict[str, list[LoraItem]] = {}
+        errors: list[dict] = []
+        with ThreadPoolExecutor(max_workers=max(1, len(plan))) as pool:
+            futures = {pool.submit(fn): (key, label) for key, label, fn in plan}
+            for fut, (key, label) in futures.items():
+                got, errs = self._safe_result(fut, label, timeout=deadline)
+                results[key] = got
+                errors.extend(errs)
+        hf_items = results.get("huggingface", [])
+        gh_items = results.get("github", [])
+        cv_items = results.get("civitai", [])
+        if plan and not any(results.values()):
+            errors.append(msg("all_failed"))
 
         previous = {it.key: it for it in self.items}
         fetched: dict[str, LoraItem] = {}
         for it in hf_items + gh_items + cv_items:
             fetched.setdefault(it.key, it)
 
-        # 소스 전체가 실패했으면 이전 캐시의 해당 소스 항목을 유지한다.
-        for source, got in (("huggingface", hf_items), ("github", gh_items), ("civitai", cv_items)):
-            if not got:
-                kept = [it for it in previous.values() if it.source == source]
-                if kept:
-                    errors.append(msg("kept_cache", source=SOURCE_NAMES.get(source, source), n=len(kept)))
-                for it in kept:
-                    fetched.setdefault(it.key, it)
+        # 소스가 오류를 냈거나 아예 비활성이면 그 소스의 이전 캐시 항목을 유지한다.
+        # (쿼리 일부만 실패해도 이미 알던 항목이 사라지면 안 된다)
+        failed_sources = {e.get("source_key") for e in errors if isinstance(e, dict)}
+        for source in ("huggingface", "github", "civitai"):
+            got = results.get(source)
+            source_failed = source not in enabled or not got or source in failed_sources
+            if not source_failed:
+                continue
+            kept = [it for it in previous.values() if it.source == source]
+            missing = [it for it in kept if it.key not in fetched]
+            if missing and source in enabled:
+                errors.append(msg("kept_cache", source=SOURCE_NAMES.get(source, source), n=len(missing)))
+            for it in kept:
+                fetched.setdefault(it.key, it)
 
         # 이전에 Claude 요약이 있던 항목은 유지
         for key, it in fetched.items():
             prev = previous.get(key)
             if prev and prev.summary_source == "claude" and prev.summary_ko:
                 it.summary_ko, it.summary_en, it.summary_source = prev.summary_ko, prev.summary_en, "claude"
-            if prev and prev.description and not it.description.startswith(prev.description[:40]) and it.source == "huggingface":
-                # README 발췌를 이미 받아둔 경우 재사용
-                if len(prev.description) > len(it.description):
-                    it.description = prev.description
-                    for t in prev.trigger_words:
-                        if t not in it.trigger_words:
-                            it.trigger_words.append(t)
+            if prev and prev.description and it.source == "huggingface":
+                # 이미 받아둔 README 발췌를 재사용하되, 이번에 새로 온 태그/예시 블록은 남긴다
+                excerpt = prev.description.split("\n예시 프롬프트:")[0].split("\n태그:")[0].strip()
+                if excerpt and excerpt not in it.description:
+                    it.description = (excerpt + "\n" + it.description).strip()
+                for t in prev.trigger_words:
+                    if t not in it.trigger_words:
+                        it.trigger_words.append(t)
+                it.trigger_words = it.trigger_words[:5]
 
         items = list(fetched.values())
         self._set_progress("marking_new", n=len(items))
@@ -209,21 +253,30 @@ class NewsService:
         return self._summarizer
 
     @staticmethod
-    def _safe_result(fut, label: str) -> tuple[list[LoraItem], list[dict]]:
+    def _safe_result(fut, label: str, timeout: float | None = None) -> tuple[list[LoraItem], list[dict]]:
+        key = {"Hugging Face": "huggingface", "GitHub": "github", "Civitai": "civitai"}.get(label, label)
         try:
-            items, errors = fut.result()
-            return list(items), list(errors)
+            items, errors = fut.result(timeout=timeout)
+            return list(items), [dict(e, source_key=key) if isinstance(e, dict) else e for e in errors]
+        except FuturesTimeout:
+            fut.cancel()
+            log.warning("%s 수집이 제한 시간(%ss)을 넘겼습니다", label, timeout)
+            return [], [dict(msg("deadline", source=label), source_key=key)]
         except Exception as e:  # noqa: BLE001
             log.warning("%s 수집 실패: %s", label, e)
-            return [], [msg("source_failed", source=label, err=e)]
+            return [], [dict(msg("source_failed", source=label, err=e), source_key=key)]
 
     def _mark_new(self, items: list[LoraItem], now: datetime) -> None:
         seen = self.store.load_seen()
-        baseline = not seen  # 첫 실행: 전부 신규로 표시하지 않고 소스의 등록일을 기준으로 삼는다
+        # 기준선은 소스마다 따로 잡는다. 한 소스가 처음 성공한 날 그 소스의 기존 항목이
+        # 전부 "신규"로 쏟아지지 않도록 하기 위해서다.
+        prefixes = {"huggingface": "hf:", "github": "gh:", "civitai": "civitai:"}
+        baselined = {src for src, pre in prefixes.items() if any(k.startswith(pre) for k in seen)}
         window = timedelta(hours=self.config.new_window_hours)
         now_iso = now.isoformat()
         for it in items:
             first = seen.get(it.key)
+            baseline = it.source not in baselined
             if not first:
                 if baseline:
                     created = _parse_dt(it.created_at)

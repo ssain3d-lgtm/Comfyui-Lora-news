@@ -31,6 +31,7 @@ class LoraItem:
     likes: int = 0                # HF likes 또는 GitHub stars
     nsfw: bool = False
     files: list = field(default_factory=list)   # safetensors 파일명
+    thumb: str = ""               # 미리보기 이미지 URL (전체 이용가 등급만)
     first_seen: str = ""          # 이 앱이 처음 발견한 시각
     is_new: bool = False          # 최근 발견 창(기본 72시간) 안에 처음 발견됨
     found_this_run: bool = False  # 이번 실행에서 처음 발견됨
@@ -40,8 +41,33 @@ class LoraItem:
 
     @classmethod
     def from_dict(cls, data: dict) -> "LoraItem":
-        known = {f.name for f in fields(cls)}
-        return cls(**{k: v for k, v in data.items() if k in known})
+        """캐시 JSON 에서 복원. 손상된 값이 있어도 앱이 멈추지 않도록 타입을 강제한다."""
+        if not isinstance(data, dict):
+            raise ValueError("LoraItem 은 dict 에서만 복원할 수 있습니다")
+        spec = {f.name: f for f in fields(cls)}
+        clean: dict = {}
+        for key, value in data.items():
+            field_def = spec.get(key)
+            if field_def is None:
+                continue
+            if field_def.type in ("str", str):
+                clean[key] = value if isinstance(value, str) else ("" if value is None else str(value))
+            elif field_def.type in ("int", int):
+                try:
+                    clean[key] = int(value)
+                except (TypeError, ValueError):
+                    clean[key] = 0
+            elif field_def.type in ("bool", bool):
+                clean[key] = bool(value)
+            elif field_def.type in ("list", list):
+                clean[key] = [v for v in value if isinstance(v, str)] if isinstance(value, list) else []
+            else:
+                clean[key] = value
+        if not clean.get("key") or not clean.get("source"):
+            raise ValueError("key/source 가 없는 항목")
+        for required in ("name", "author", "url"):   # 기본값이 없는 필드
+            clean.setdefault(required, "")
+        return cls(**clean)
 
     @property
     def is_video(self) -> bool:

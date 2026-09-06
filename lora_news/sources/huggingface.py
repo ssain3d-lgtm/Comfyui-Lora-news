@@ -151,10 +151,14 @@ def fetch(limit: int = 100, token: str = "", timeout: int = 30, workers: int = 4
                 kind, endpoint, data = fut.result()
             except Exception as e:  # noqa: BLE001
                 log.warning("HuggingFace 요청 실패: %s", e)
-                errors.append(msg("hf_failed", err=e))
+                m = msg("hf_failed", err=e)
+                if m not in errors:
+                    errors.append(m)
                 continue
             if not isinstance(data, list):
-                errors.append(msg("hf_bad_response", body=str(data)[:120]))
+                m = msg("hf_bad_response", body=str(data)[:120])
+                if m not in errors:
+                    errors.append(m)
                 continue
             for m in data:
                 try:
@@ -163,6 +167,8 @@ def fetch(limit: int = 100, token: str = "", timeout: int = 30, workers: int = 4
                     log.debug("parse error: %s", e)
                     continue
                 if item and item.key not in items:
+                    # 어느 쿼리가 먼저 끝나든 같은 결과가 되도록 kind 를 다시 판정한다
+                    item.kind = "workflow" if is_workflow_repo(item.name, item.tags) else "lora"
                     items[item.key] = item
     log.info("HuggingFace: %d개 수집 (오류 %d)", len(items), len(errors))
     return list(items.values()), errors

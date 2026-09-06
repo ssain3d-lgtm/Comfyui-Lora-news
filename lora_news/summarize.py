@@ -32,6 +32,12 @@ SYSTEM_PROMPT = (
 )
 
 
+LEGACY_JSON_INSTRUCTION = (
+    '반드시 다른 말 없이 JSON 만 출력하세요. 형식: '
+    '{"items": [{"key": "...", "summary_ko": "...", "summary_en": "...", "category": "..."}]}'
+)
+
+
 def allowed_categories(item: LoraItem) -> list[str]:
     if item.kind == "workflow":
         return WF_CATEGORIES
@@ -107,7 +113,7 @@ class ClaudeSummarizer:
                 it.summary_ko = hit["summary_ko"]
                 it.summary_en = hit.get("summary_en") or ""
                 it.summary_source = "claude"
-                if hit.get("category") in CATEGORIES:
+                if hit.get("category") in allowed_categories(it):
                     it.category = hit["category"]
                 n += 1
         return n
@@ -149,7 +155,7 @@ class ClaudeSummarizer:
                 it.summary_ko = summary
                 it.summary_en = summary_en
                 it.summary_source = "claude"
-                if r.get("category") in CATEGORIES:
+                if r.get("category") in allowed_categories(it):
                     it.category = r["category"]
                 cache[it.key] = {"summary_ko": summary, "summary_en": summary_en, "category": it.category,
                                  "model": self.model, "ts": now}
@@ -179,9 +185,11 @@ class ClaudeSummarizer:
                     response = self.client.beta.messages.create(
                         betas=["server-side-fallback-2026-07-01"], fallbacks="default", **kwargs
                     )
-                except TypeError:
-                    # 구버전 SDK 는 fallbacks 파라미터를 모름
-                    response = self.client.messages.create(**kwargs)
+                except (TypeError, AttributeError):
+                    # 구버전 SDK: fallbacks 도 output_config 도 모른다. JSON 은 프롬프트로 요청한다.
+                    legacy = {k: v for k, v in kwargs.items() if k != "output_config"}
+                    legacy["system"] = legacy["system"] + "\n\n" + LEGACY_JSON_INSTRUCTION
+                    response = self.client.messages.create(**legacy)
                 break
             except anthropic.AuthenticationError as e:
                 self.available = False
@@ -206,6 +214,15 @@ class ClaudeSummarizer:
             details = getattr(response, "stop_details", None)
             raise SummarizeError(msg("claude_refusal", category=getattr(details, "category", "") or ""))
         text = next((b.text for b in response.content if getattr(b, "type", "") == "text"), "")
-        data = json.loads(text) if text else {}
+        try:
+            data = json.loads(text) if text else {}
+        except json.JSONDecodeError:
+            start, end = text.find("{"), text.rfind("}")
+            if start < 0 or end <= start:
+                raise SummarizeError(msg("claude_bad_json")) from None
+            try:
+                data = json.loads(text[start:end + 1])
+            except json.JSONDecodeError:
+                raise SummarizeError(msg("claude_bad_json")) from None
         items = data.get("items") if isinstance(data, dict) else None
         return items if isinstance(items, list) else []

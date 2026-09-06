@@ -28,10 +28,14 @@ def load_dotenv(path: Path | None = None, override: bool = False) -> dict:
         key, value = line.split("=", 1)
         key = key.strip()
         value = value.strip()
+        # 따옴표로 감싼 값은 그대로, 아니면 뒤따르는 주석을 떼어낸다
         if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
             value = value[1:-1]
-        elif " #" in value:
-            value = value.split(" #", 1)[0].rstrip()
+        else:
+            if " #" in value:
+                value = value.split(" #", 1)[0].rstrip()
+            if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
+                value = value[1:-1]
         if not key:
             continue
         if override or key not in os.environ:
@@ -81,3 +85,11 @@ class Config:
                 os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")
             )
         self.http_timeout = _int("LORA_NEWS_HTTP_TIMEOUT", 30)
+        # 한 번의 새로고침이 통째로 매달리지 않도록 하는 상한 (초)
+        self.refresh_deadline = _int("LORA_NEWS_REFRESH_DEADLINE", 180)
+        # 사용할 소스 선택: "huggingface,github,civitai" 중 일부
+        raw_sources = os.environ.get("LORA_NEWS_SOURCES", "").strip().lower()
+        known = ("huggingface", "github", "civitai")
+        aliases = {"hf": "huggingface", "gh": "github", "cv": "civitai", "civit": "civitai"}
+        chosen = [aliases.get(x.strip(), x.strip()) for x in raw_sources.split(",") if x.strip()]
+        self.sources = tuple(s for s in known if s in chosen) if chosen else known
