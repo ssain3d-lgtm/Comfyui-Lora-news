@@ -19,11 +19,13 @@ class HuggingFaceParseTests(unittest.TestCase):
         }
         it = parse_model(m)
         self.assertEqual(it.key, "hf:author/flux-style-lora")
+        self.assertEqual(it.description, "", "설명에 한글 라벨을 섞지 않는다")
         self.assertEqual(it.trigger_words, ["xyz style"])
         self.assertEqual(it.example_prompt, "xyz style, a cat")
         self.assertEqual(it.files, ["lora.safetensors"])
         self.assertIn("FLUX.1-dev", it.base_model_raw)
         self.assertEqual(it.tags, ["style"])
+        self.assertEqual(it.example_prompt, "xyz style, a cat")
         self.assertFalse(it.nsfw)
 
     def test_parse_model_minimal_and_private(self):
@@ -87,7 +89,8 @@ class CivitaiParseTests(unittest.TestCase):
         self.assertEqual(it.downloads, 900)
         self.assertEqual(it.likes, 120)
         self.assertFalse(it.nsfw)
-        self.assertIn("최신 버전: v2 · 베이스: Illustrious", it.description)
+        self.assertEqual(it.version, "v2", "버전은 설명에 한글로 박지 않고 별도 필드로 둔다")
+        self.assertNotIn("최신 버전", it.description)
         self.assertIn("Studio Ghibli style.", it.description)
         self.assertIn("Use weight 0.8–1.0", it.description)
         self.assertNotIn("<", it.description)

@@ -12,7 +12,7 @@
    "realism",
    "photo"
   ],
-  "description": "Realism LoRA for FLUX.1-dev. Produces photorealistic images with natural skin texture.\n예시 프롬프트: contrast, a photo of a woman, amateur photography",
+  "description": "Realism LoRA for FLUX.1-dev. Produces photorealistic images with natural skin texture.",
   "trigger_words": [],
   "example_prompt": "a photo of a woman, amateur photography",
   "created_at": "2026-08-30T10:00:00.000Z",
@@ -66,7 +66,11 @@
   "likes": 1500,
   "files": [
    "Wan21_T2V_14B_lightx2v_cfg_step_distill_lora_rank32.safetensors"
-  ]
+  ],
+  "changes": [
+   "updated"
+  ],
+  "last_change_at": "2026-09-08T12:00:00.000Z"
  },
  {
   "key": "hf:alvdansen/frosting_lane_flux",
@@ -322,7 +326,7 @@
    "tool",
    "enhancer"
   ],
-  "description": "최신 버전: v1.0 · 베이스: SDXL 1.0\nAdds or removes detail. Use positive weight for more detail and negative for a smoother look.",
+  "description": "Adds or removes detail. Use positive weight for more detail and negative for a smoother look.",
   "trigger_words": [],
   "created_at": "2026-09-03T12:00:00.000Z",
   "updated_at": "2026-09-03T12:00:00.000Z",
@@ -331,7 +335,8 @@
   "files": [
    "add-detail-xl.safetensors"
   ],
-  "thumb": "https://image.civitai.com/example/detail-tweaker.jpeg"
+  "thumb": "https://image.civitai.com/example/detail-tweaker.jpeg",
+  "version": "v1.0"
  },
  {
   "key": "civitai:1002",
@@ -347,7 +352,7 @@
    "anime",
    "ghibli"
   ],
-  "description": "최신 버전: v2 · 베이스: Illustrious\nStudio Ghibli inspired background and character style.",
+  "description": "Studio Ghibli inspired background and character style.",
   "trigger_words": [
    "ghibli style"
   ],
@@ -357,7 +362,8 @@
   "likes": 120,
   "files": [
    "ghibli_illustrious_v2.safetensors"
-  ]
+  ],
+  "version": "v2"
  },
  {
   "key": "civitai:1003",
@@ -373,7 +379,7 @@
    "video",
    "speed"
   ],
-  "description": "최신 버전: high+low noise · 베이스: Wan Video 2.2 I2V-A14B\nDistilled LoRA for 4 step image to video generation.",
+  "description": "Distilled LoRA for 4 step image to video generation.",
   "trigger_words": [],
   "created_at": "2026-08-25T00:00:00.000Z",
   "updated_at": "2026-09-01T00:00:00.000Z",
@@ -382,7 +388,13 @@
   "files": [
    "wan22_i2v_lightning_high.safetensors",
    "wan22_i2v_lightning_low.safetensors"
-  ]
+  ],
+  "version": "high+low noise",
+  "changes": [
+   "version",
+   "downloads"
+  ],
+  "last_change_at": "2026-09-08T12:00:00.000Z"
  },
  {
   "key": "civitai:2001",
@@ -398,7 +410,7 @@
    "inpainting",
    "upscale"
   ],
-  "description": "최신 버전: v1.2 · 베이스: Flux.1 Kontext\nMask an area, edit it with Kontext, then upscale with SUPIR. Requires ComfyUI-KJNodes.",
+  "description": "Mask an area, edit it with Kontext, then upscale with SUPIR. Requires ComfyUI-KJNodes.",
   "trigger_words": [],
   "created_at": "2026-09-04T04:00:00.000Z",
   "updated_at": "2026-09-04T04:00:00.000Z",
@@ -407,7 +419,8 @@
   "files": [
    "kontext_inpaint_upscale_v1.2.json"
   ],
-  "thumb": "https://image.civitai.com/example/kontext-inpaint.jpeg"
+  "thumb": "https://image.civitai.com/example/kontext-inpaint.jpeg",
+  "version": "v1.2"
  },
  {
   "key": "civitai:2002",
@@ -424,7 +437,7 @@
    "video",
    "gguf"
   ],
-  "description": "최신 버전: v3 · 베이스: Wan Video 2.2 I2V-A14B\nImage to video on 8GB VRAM using GGUF models and lightx2v LoRA, with RIFE frame interpolation.",
+  "description": "Image to video on 8GB VRAM using GGUF models and lightx2v LoRA, with RIFE frame interpolation.",
   "trigger_words": [],
   "created_at": "2026-08-20T00:00:00.000Z",
   "updated_at": "2026-09-02T00:00:00.000Z",
@@ -432,7 +445,12 @@
   "likes": 610,
   "files": [
    "wan22_i2v_gguf_v3.json"
-  ]
+  ],
+  "version": "v3",
+  "changes": [
+   "version"
+  ],
+  "last_change_at": "2026-09-08T12:00:00.000Z"
  },
  {
   "key": "gh:comfyanonymous/ComfyUI_examples",
@@ -507,7 +525,7 @@
    "video",
    "camera"
   ],
-  "description": "최신 버전: v1 · 베이스: MiniMax H3\nSlow orbit camera motion LoRA for MiniMax H3 (Hailuo 3) video generation.",
+  "description": "Slow orbit camera motion LoRA for MiniMax H3 (Hailuo 3) video generation.",
   "trigger_words": [
    "slow orbit"
   ],
@@ -517,7 +535,8 @@
   "likes": 30,
   "files": [
    "hailuo3_slow_orbit.safetensors"
-  ]
+  ],
+  "version": "v1"
  },
  {
   "key": "hf:someone/krea2-oil-painting-lora",

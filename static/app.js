@@ -3,13 +3,20 @@
   "use strict";
 
   const $ = (sel) => document.querySelector(sel);
+
+  // 저장된 선택이 없으면 브라우저 언어를 따른다. 영어권 방문자가 한국어 화면을 보고 돌아서지 않도록.
+  function defaultLang() {
+    try {
+      return String(navigator.language || "").toLowerCase().startsWith("ko") ? "ko" : "en";
+    } catch (e) { return "ko"; }
+  }
   const state = {
     items: [],
     labelsEn: { base_models: {}, categories: {} },
     status: {},
     filters: loadPrefs({
-      lang: "ko", kind: "lora", q: "", source: "all", base: null, cat: null,
-      onlyNew: false, recent7: false, hideNsfw: true, sort: "new", group: "none",
+      lang: defaultLang(), kind: "lora", q: "", source: "all", base: null, cat: null,
+      onlyNew: false, onlyChanged: false, since: "all", hideNsfw: true, sort: "new", group: "none",
     }),
     pollTimer: null,
   };
@@ -47,13 +54,30 @@
     sort_downloads: { ko: "다운로드 많은순", en: "Most downloads" },
     sort_likes: { ko: "좋아요/스타 많은순", en: "Most likes / stars" },
     sort_name: { ko: "이름순", en: "Name" },
+    sort_found: { ko: "발견일 최신순", en: "Recently found" },
+    sort_changed: { ko: "변경된 것 먼저", en: "Changed first" },
+    since_all: { ko: "발견: 전체", en: "Found: any time" },
+    since_1: { ko: "발견: 오늘", en: "Found: today" },
+    since_3: { ko: "발견: 최근 3일", en: "Found: last 3 days" },
+    since_7: { ko: "발견: 최근 7일", en: "Found: last 7 days" },
+    since_30: { ko: "발견: 최근 30일", en: "Found: last 30 days" },
+    since_label: { ko: "발견 시점", en: "Found within" },
+    only_changed: { ko: "변경된 것만", en: "Changed only" },
+    stat_found_today: { ko: "오늘 발견", en: "Found today" },
+    stat_changed: { ko: "변경됨", en: "Changed" },
+    badge_changed: { ko: "변경", en: "Updated" },
+    change_version: { ko: "새 버전 {v}", en: "new version {v}" },
+    change_updated: { ko: "업스트림 갱신", en: "updated upstream" },
+    change_downloads: { ko: "다운로드 급증", en: "downloads jumped" },
+    version: { ko: "버전", en: "Version" },
+    readme: { ko: "모델 카드", en: "Model card" },
     group_none: { ko: "묶기: 없음", en: "Group: none" },
     group_category: { ko: "묶기: 용도별", en: "Group: by purpose" },
     group_base: { ko: "묶기: 베이스 모델별", en: "Group: by base model" },
     group_source: { ko: "묶기: 소스별", en: "Group: by source" },
     src_all: { ko: "전체", en: "All" },
     only_new: { ko: "신규만", en: "New only" },
-    recent7: { ko: "최근 7일 등록", en: "Added in last 7 days" },
+
     hide_nsfw: { ko: "NSFW 숨기기", en: "Hide NSFW" },
     facet_base: { ko: "베이스 모델", en: "Base model" },
     facet_cat: { ko: "용도", en: "Purpose" },
@@ -229,7 +253,8 @@
       if (except !== "base" && f.base && it.base_model !== f.base) return false;
       if (except !== "cat" && f.cat && it.category !== f.cat) return false;
       if (f.onlyNew && !it.is_new) return false;
-      if (f.recent7 && !daysAgo(it.created_at, 7)) return false;
+      if (f.onlyChanged && !(it.changes || []).length) return false;
+      if (f.since !== "all" && !daysAgo(it.first_seen, Number(f.since))) return false;
       if (f.hideNsfw && it.nsfw) return false;
       if (q) {
         const hay = [it.name, it.author, it.summary_ko, it.summary_en, it.description, (it.tags || []).join(" "),
@@ -243,13 +268,15 @@
 
   function hasActiveFilters() {
     const f = state.filters;
-    return !!(f.q.trim() || f.source !== "all" || f.base || f.cat || f.onlyNew || f.recent7);
+    return !!(f.q.trim() || f.source !== "all" || f.base || f.cat || f.onlyNew || f.onlyChanged || f.since !== "all");
   }
 
   function visibleItems() {
     const list = applyFilters(null);
     const by = {
-      new: (a, b) => (b.found_this_run - a.found_this_run) || (b.is_new - a.is_new) || cmpDate(b.created_at, a.created_at),
+      new: (a, b) => (b.found_this_run - a.found_this_run) || (b.is_new - a.is_new) || cmpDate(b.first_seen, a.first_seen),
+      found: (a, b) => cmpDate(b.first_seen, a.first_seen),
+      changed: (a, b) => ((b.changes || []).length > 0) - ((a.changes || []).length > 0) || cmpDate(b.last_change_at, a.last_change_at),
       created: (a, b) => cmpDate(b.created_at, a.created_at),
       updated: (a, b) => cmpDate(b.updated_at, a.updated_at),
       downloads: (a, b) => (b.downloads || 0) - (a.downloads || 0) || (b.likes || 0) - (a.likes || 0),
@@ -281,10 +308,14 @@
     $("#group").setAttribute("aria-label", t("group_label"));
     $("#tabs").setAttribute("aria-label", t("tab_label"));
     const opts = (pairs, current) => pairs.map(([v, k]) => `<option value="${v}"${v === current ? " selected" : ""}>${esc(t(k))}</option>`).join("");
-    $("#sort").innerHTML = opts([["new", "sort_new"], ["created", "sort_created"], ["updated", "sort_updated"],
-      ["downloads", "sort_downloads"], ["likes", "sort_likes"], ["name", "sort_name"]], state.filters.sort);
+    $("#sort").innerHTML = opts([["new", "sort_new"], ["found", "sort_found"], ["changed", "sort_changed"],
+      ["created", "sort_created"], ["updated", "sort_updated"], ["downloads", "sort_downloads"],
+      ["likes", "sort_likes"], ["name", "sort_name"]], state.filters.sort);
     $("#group").innerHTML = opts([["none", "group_none"], ["category", "group_category"], ["base_model", "group_base"],
       ["source", "group_source"]], state.filters.group);
+    $("#since").innerHTML = opts([["all", "since_all"], ["1", "since_1"], ["3", "since_3"], ["7", "since_7"],
+      ["30", "since_30"]], state.filters.since);
+    $("#since").setAttribute("aria-label", t("since_label"));
     const link = (url, label) => `<a href="${url}" target="_blank" rel="noopener">${label}</a>`;
     $("#footer").innerHTML = t("footer", {
       hf: link("https://huggingface.co/models?other=lora", "Hugging Face"),
@@ -336,7 +367,9 @@
     const cells = [
       [t("stat_total"), items.length, ""],
       [t("stat_new"), n((it) => it.is_new), "new"],
-      [t("stat_found"), n((it) => it.found_this_run), "found"],
+      // "이번 실행 발견"은 cron 이 대신 실행하면 0이 된다. 시각 기준이라야 언제 열어도 맞다.
+      [t("stat_found_today"), n((it) => daysAgo(it.first_seen, 1)), "found"],
+      [t("stat_changed"), n((it) => (it.changes || []).length), "changed"],
     ];
     const claude = n((it) => it.summary_source === "claude");
     if (claude) cells.push([t("stat_claude"), claude, ""]);
@@ -378,7 +411,8 @@
 
     $("#search").value = f.q;
     $("#only-new").checked = f.onlyNew;
-    $("#recent7").checked = f.recent7;
+    $("#only-changed").checked = f.onlyChanged;
+    $("#since").value = f.since;
     $("#hide-nsfw").checked = f.hideNsfw;
     $("#sort").value = f.sort;
     $("#group").value = f.group;
@@ -408,11 +442,18 @@
     const files = (it.files || []).length
       ? `<div class="files">${it.files.map((f) => `<code>${esc(f)}</code>`).join("")}</div>` : "";
     const desc = (it.description || "").trim();
+    const readme = (it.readme_excerpt || "").trim();
+    const changes = it.changes || [];
+    const changeText = changes.map((c) => t({ version: "change_version", updated: "change_updated",
+                                              downloads: "change_downloads" }[c] || "change_updated",
+                                             { v: it.version || "?" })).join(", ");
     const nFiles = (it.files || []).length;
     const fileKey = isWf ? (nFiles === 1 ? "json_one" : "json_files") : (nFiles === 1 ? "files_one" : "files");
     const fileLabel = nFiles ? " · " + t(fileKey, { n: nFiles }) : "";
-    const details = (desc || files)
-      ? `<details><summary>${t("details")}${fileLabel}</summary>${desc ? `<p>${esc(desc)}</p>` : ""}${files}</details>`
+    const details = (desc || readme || files)
+      ? `<details><summary>${t("details")}${fileLabel}</summary>` +
+        `${readme ? `<p><b>${t("readme")}</b><br>${esc(readme)}</p>` : ""}` +
+        `${desc ? `<p>${esc(desc)}</p>` : ""}${files}</details>`
       : "";
     const thumb = it.thumb
       ? `<img class="thumb" src="${esc(it.thumb)}" alt="${esc(t("preview_of", { name: it.name }))}" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">`
@@ -424,6 +465,7 @@
           ${sourceBadge(it)}
           ${isWf ? `<span class="badge wf">WF</span>` : ""}
           ${it.found_this_run ? `<span class="badge found">${t("badge_found")}</span>` : (it.is_new ? `<span class="badge new">${t("badge_new")}</span>` : "")}
+          ${changes.length ? `<span class="badge changed" title="${esc(changeText)}">${t("badge_changed")}</span>` : ""}
           ${it.nsfw ? `<span class="badge nsfw">NSFW</span>` : ""}
           ${it.summary_source === "claude" ? `<span class="badge claude" title="${t("badge_ai_title")}">${t("badge_ai")}</span>` : ""}
         </div>
@@ -431,7 +473,7 @@
       </div>
       <div class="title"><a href="${esc(it.url)}" target="_blank" rel="noopener">${esc(it.name)}</a></div>
       <div class="author">${esc(it.author)}${it.pipeline && !isWf ? " · " + esc(it.pipeline) : ""}</div>
-      <div class="tags"><span class="tag base">${esc(baseLabel(it.base_model))}</span><span class="tag cat">${esc(catLabel(it.category))}</span>${(it.tags || []).slice(0, 4).map((x) => `<span class="tag">${esc(x)}</span>`).join("")}</div>
+      <div class="tags"><span class="tag base">${esc(baseLabel(it.base_model))}</span><span class="tag cat">${esc(catLabel(it.category))}</span>${it.version ? `<span class="tag ver">${esc(it.version)}</span>` : ""}${(it.tags || []).slice(0, 4).map((x) => `<span class="tag">${esc(x)}</span>`).join("")}</div>
       <div class="summary">${esc(summaryOf(it))}</div>
       ${triggers}
       ${details}
@@ -477,7 +519,8 @@
 
   // ---------------------------------------------------------------- events
   function clearFilters() {
-    Object.assign(state.filters, { q: "", source: "all", base: null, cat: null, onlyNew: false, recent7: false });
+    Object.assign(state.filters, { q: "", source: "all", base: null, cat: null, onlyNew: false,
+                                   onlyChanged: false, since: "all" });
     savePrefs();
     renderFacets();
     renderList();
@@ -505,8 +548,9 @@
     });
     $("#sort").addEventListener("change", (e) => { state.filters.sort = e.target.value; savePrefs(); renderList(); });
     $("#group").addEventListener("change", (e) => { state.filters.group = e.target.value; savePrefs(); renderList(); });
-    $("#only-new").addEventListener("change", (e) => { state.filters.onlyNew = e.target.checked; savePrefs(); renderList(); });
-    $("#recent7").addEventListener("change", (e) => { state.filters.recent7 = e.target.checked; savePrefs(); renderList(); });
+    $("#only-new").addEventListener("change", (e) => { state.filters.onlyNew = e.target.checked; savePrefs(); renderFacets(); renderList(); });
+    $("#only-changed").addEventListener("change", (e) => { state.filters.onlyChanged = e.target.checked; savePrefs(); renderFacets(); renderList(); });
+    $("#since").addEventListener("change", (e) => { state.filters.since = e.target.value; savePrefs(); renderFacets(); renderList(); });
     $("#hide-nsfw").addEventListener("change", (e) => { state.filters.hideNsfw = e.target.checked; savePrefs(); renderList(); });
     $("#source-chips").addEventListener("click", (e) => {
       const el = e.target.closest("[data-source]"); if (!el) return;

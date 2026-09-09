@@ -126,9 +126,11 @@ Use the **Refresh** button at any time; the **EN / 한국어** button switches t
 
 - **Three sources**: Hugging Face (`lora`-tagged models), GitHub (repository search), Civitai (LORA / LoCon / DoRA and Workflows types)
 - **LoRA / Workflows tabs**: Civitai workflows, GitHub `comfyui workflow` repositories and workflow-JSON repositories on Hugging Face are collected separately
-- **New detection**: items seen for the first time get a `NEW` badge; items first seen during this run get `Found this run` (new for 72 hours by default)
+- **New detection**: items seen for the first time get a `NEW` badge; items first seen during this run get `Found this run` (new for 72 hours by default). Sort by when you found something, or filter to what turned up in the last day, 3 days, week or month
+- **Change detection**: an item that gained a new version, was touched upstream or saw its downloads jump gets a `Updated` badge, with a `Changed only` filter and a `Changed first` sort. This is the thing no upstream site can tell you, because it depends on what you saw last time
 - **Classification**: chips for base model and purpose; group by purpose, base model or source. Workflows use their own categories: image generation, video generation, editing/inpainting, upscale/fix, ControlNet/pose, character consistency, training/tools, collections/templates
-- **Summaries**: rule-based one-liners built from the name, tags and model card, in both English and Korean, e.g. `Style/art style LoRA for FLUX.1 · pastel tones · Trigger: frstingln illustration`
+- **Summaries**: bilingual one-liners that lead with the model's own description when it has one, falling back to a base-model and purpose template when it does not. The base model and purpose are already chips on the card, so the summary does not repeat them
+- **Language**: the page opens in your browser's language and the EN / 한국어 button switches it
 - **Preview thumbnails**: Civitai items show their preview image (all-ages images only; NSFW items never get one)
 - **Pick your sources**: `LORA_NEWS_SOURCES=huggingface,github` skips a source that is blocked for you
 - **Trigger words**: pulled from Hugging Face model cards (`instance_prompt`, "Trigger words:") and Civitai `trainedWords`; click to copy
@@ -186,10 +188,13 @@ If the safety classifier declines a request, the server-side default fallback mo
 4. Workflows are Civitai Workflows, GitHub repositories with "workflow" in the name or topics, and Hugging Face
    model/dataset repositories named comfy+workflow.
 5. Each item's name, tags, `base_model` tag and model-card excerpt are run through keyword rules to get the base model,
-   purpose, hints and trigger words, then English and Korean one-liners are built.
+   purpose, hints and trigger words, then English and Korean one-liners are built. A decisive tag such as `character`
+   wins outright, so a bigger keyword bucket cannot outvote it.
 6. `data/seen.json` records when each item was first seen. The first run is a baseline: only items whose source
    creation date is recent are marked new. From the next run on, newly appearing items get `Found this run`.
-7. Optionally Claude writes summaries for new / unsummarised items and caches them.
+7. Each item is compared against the previous run to record version, update and download changes, and stale
+   `seen.json` / `summaries.json` entries are pruned.
+8. Optionally Claude writes summaries for new / unsummarised items and caches them.
 
 ### Limitations
 
@@ -344,10 +349,12 @@ git pull
 
 - **세 가지 소스**: Hugging Face(`lora` 태그 모델), GitHub(저장소 검색), Civitai(LORA/LoCon/DoRA + Workflows 타입)
 - **LoRA / 워크플로우 탭**: Civitai 워크플로우, GitHub `comfyui workflow` 저장소, HF에 올라온 워크플로우 JSON 모음을 따로 모아 봄
-- **신규 감지**: 처음 발견한 항목은 `NEW`, 이번 실행에서 처음 본 항목은 `이번 실행 발견` 배지 (기본 72시간 동안 신규로 표시)
+- **신규 감지**: 처음 발견한 항목은 `NEW`, 이번 실행에서 처음 본 항목은 `이번 실행 발견` 배지 (기본 72시간 동안 신규로 표시). 발견일 기준 정렬과 "오늘 / 최근 3일 / 7일 / 30일에 발견" 필터를 제공합니다
+- **변경 감지**: 버전이 올라갔거나 업스트림이 갱신됐거나 다운로드가 급증한 항목에 `변경` 배지가 붙고, "변경된 것만" 필터와 "변경된 것 먼저" 정렬을 쓸 수 있습니다. 지난번에 무엇을 봤는지 아는 이 앱만 할 수 있는 일입니다
 - **분류**: 베이스 모델 / 용도별 칩 필터, 용도별·베이스 모델별·소스별 묶어보기.
   워크플로우는 이미지 생성 · 영상 생성 · 편집/인페인팅 · 업스케일/보정 · 컨트롤넷/포즈 · 캐릭터 일관성 · 학습/도구 · 모음/템플릿으로 분류
-- **한/영 요약**: 이름·태그·모델 카드에서 규칙으로 뽑은 요약을 두 언어로 생성 (예: `FLUX.1 기반 스타일/화풍 LoRA · 파스텔톤 · 트리거: xyz`)
+- **한/영 요약**: 설명이 있으면 그 문장을 앞세우고, 없으면 베이스 모델과 용도 템플릿으로 대체합니다. 베이스 모델과 용도는 이미 칩으로 떠 있어서 요약에서 되풀이하지 않습니다
+- **언어**: 브라우저 언어로 열리고 EN / 한국어 버튼으로 전환합니다
 - **미리보기 썸네일**: Civitai 항목은 미리보기 이미지를 함께 보여줍니다 (전체 이용가 이미지만, NSFW 항목은 표시하지 않음)
 - **소스 선택**: `LORA_NEWS_SOURCES=huggingface,github` 로 막혀 있는 소스를 건너뛸 수 있습니다
 - **트리거 워드**: HF 모델 카드의 `instance_prompt` / "Trigger words:" 문구, Civitai의 `trainedWords` 자동 추출, 클릭하면 복사
@@ -404,9 +411,11 @@ python app.py
    기본은 `nsfw=false` 로 받아오며, 베이스 모델(`baseModel`)과 트리거 워드(`trainedWords`)를 그대로 사용합니다.
 4. 워크플로우는 Civitai Workflows 타입, 이름/토픽에 workflow 가 들어간 GitHub 저장소, 이름에 comfy+workflow 가 들어간 HF 모델/데이터셋을 모읍니다.
 5. 항목마다 이름·태그·`base_model` 태그·모델 카드 발췌를 규칙으로 분석해 베이스 모델, 용도, 힌트, 트리거 워드를 뽑고 영문·한글 요약을 만듭니다.
+   `character` 같은 결정적 태그가 있으면 그 분류가 이깁니다. 키워드가 많은 버킷이 개수만으로 이기지 못하게 하기 위해서입니다.
 6. `data/seen.json` 에 "처음 본 시각"을 기록해 신규 여부를 판정합니다. 첫 실행은 기준선으로 삼아
    소스의 등록일이 최근인 것만 신규로 표시하고, 이후 실행부터 새로 나타난 항목을 `이번 실행 발견` 으로 표시합니다.
-7. (선택) Claude 가 신규·미요약 항목의 요약을 작성하고 캐시합니다.
+7. 이전 실행과 비교해 버전·수정일·다운로드 변화를 기록하고, 오래된 `seen.json` / `summaries.json` 기록을 정리합니다.
+8. (선택) Claude 가 신규·미요약 항목의 요약을 작성하고 캐시합니다.
 
 ### 한계
 

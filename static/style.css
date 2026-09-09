@@ -9,6 +9,7 @@
   --accent: #7c9cff;
   --accent-2: #5be0b0;
   --new: #ffb454;
+  --changed: #c9a3ff;
   --danger: #ff8a8a;
   --hf: #ffcc4d;
   --gh: #c9d1d9;
@@ -79,6 +80,7 @@ code { background: var(--panel-2); padding: 1px 5px; border-radius: 5px; font-si
 .stat span { color: var(--muted); font-size: 12px; }
 .stat.new b { color: var(--new); }
 .stat.found b { color: var(--accent-2); }
+.stat.changed b { color: var(--changed); }
 
 .filters { padding: 12px 24px; display: flex; flex-direction: column; gap: 10px; }
 .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
@@ -146,6 +148,7 @@ code { background: var(--panel-2); padding: 1px 5px; border-radius: 5px; font-si
 .badge.wf { background: rgba(91, 224, 176, .12); color: var(--accent-2); }
 .badge.new { background: var(--new); color: #1a1200; }
 .badge.found { background: var(--accent-2); color: #002a1c; }
+.badge.changed { background: rgba(201, 163, 255, .2); color: var(--changed); }
 .badge.nsfw { background: rgba(255, 138, 138, .18); color: var(--danger); }
 .badge.claude { background: rgba(124, 156, 255, .18); color: var(--accent); font-weight: 600; }
 .metrics { color: var(--muted); font-size: 12px; white-space: nowrap; display: flex; gap: 10px; font-variant-numeric: tabular-nums; }
@@ -156,6 +159,7 @@ code { background: var(--panel-2); padding: 1px 5px; border-radius: 5px; font-si
 .tag { font-size: 11px; padding: 2px 8px; border-radius: 6px; background: var(--panel-2); border: 1px solid var(--border); color: var(--muted); }
 .tag.base { color: var(--accent-2); border-color: rgba(91, 224, 176, .35); }
 .tag.cat { color: var(--accent); border-color: rgba(124, 156, 255, .35); }
+.tag.ver { color: var(--changed); border-color: rgba(201, 163, 255, .3); font-variant-numeric: tabular-nums; }
 .summary { font-size: 13.5px; line-height: 1.55; }
 .triggers { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; font-size: 12px; color: var(--muted); }
 .trigger {

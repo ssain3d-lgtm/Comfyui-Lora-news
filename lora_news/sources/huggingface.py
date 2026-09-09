@@ -104,11 +104,8 @@ def parse_model(m: dict, kind: str = "lora", dataset: bool = False) -> LoraItem 
             if isinstance(t, str) and t not in clean_tags and t not in _SKIP_TAGS:
                 clean_tags.append(t)
 
-    desc_parts = []
-    if examples:
-        desc_parts.append("예시 프롬프트: " + " | ".join(examples))
-    if clean_tags:
-        desc_parts.append("태그: " + ", ".join(clean_tags[:20]))
+    # 예시 프롬프트와 태그는 각자의 필드로 간다. 설명에 한글 라벨을 섞으면
+    # 영어 화면에서도 그대로 보이고, 분류기 입장에서는 태그를 두 번 세게 된다.
 
     author = m.get("author") or mid.split("/")[0]
     prefix = "datasets/" if dataset else ""
@@ -119,7 +116,7 @@ def parse_model(m: dict, kind: str = "lora", dataset: bool = False) -> LoraItem 
         name=mid,
         author=author,
         url=f"https://huggingface.co/{prefix}{mid}",
-        description="\n".join(desc_parts),
+        description="",
         tags=clean_tags[:30],
         pipeline=m.get("pipeline_tag") or "",
         base_model_raw=" ".join(base_raw),
@@ -212,8 +209,9 @@ def fetch_readme(item: LoraItem, token: str = "", timeout: int = 20) -> tuple[st
     return clean_readme(raw), extract_trigger_words(raw)
 
 
-def enrich_with_readmes(items: list[LoraItem], token: str = "", timeout: int = 20, workers: int = 6) -> int:
-    """여러 항목의 README를 병렬로 가져와 description/trigger_words 를 보강. 성공 개수 반환."""
+def enrich_with_readmes(items: list[LoraItem], token: str = "", timeout: int = 20, workers: int = 6,
+                        now: str = "") -> int:
+    """여러 항목의 README를 병렬로 가져와 readme_excerpt/trigger_words 를 채운다. 성공 개수 반환."""
     ok = 0
     with ThreadPoolExecutor(max_workers=workers) as pool:
         futs = {pool.submit(fetch_readme, it, token, timeout): it for it in items}
@@ -223,8 +221,9 @@ def enrich_with_readmes(items: list[LoraItem], token: str = "", timeout: int = 2
                 excerpt, triggers = fut.result()
             except Exception:  # noqa: BLE001
                 continue
+            it.readme_fetched_at = now or it.readme_fetched_at or "fetched"
             if excerpt:
-                it.description = (excerpt + "\n" + it.description).strip()
+                it.readme_excerpt = excerpt     # 덧붙이지 않고 대체한다 (매번 앞에 붙어 불어나던 문제)
                 ok += 1
             for t in triggers:
                 if t not in it.trigger_words:

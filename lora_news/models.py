@@ -13,7 +13,10 @@ class LoraItem:
     author: str
     url: str
     kind: str = "lora"            # "lora" | "workflow"
-    description: str = ""         # 원문(영문) 설명 / 모델 카드 발췌
+    description: str = ""         # 원문(영문) 설명
+    readme_excerpt: str = ""      # 모델 카드(README) 발췌. description 과 섞지 않는다
+    readme_fetched_at: str = ""   # 모델 카드를 읽어온 시각 (다시 읽을지 판단용)
+    version: str = ""             # 소스가 알려준 최신 버전 이름
     tags: list = field(default_factory=list)
     pipeline: str = ""            # text-to-image, image-to-video ...
     base_model_raw: str = ""      # 태그에서 읽은 베이스 모델 원문
@@ -35,6 +38,8 @@ class LoraItem:
     first_seen: str = ""          # 이 앱이 처음 발견한 시각
     last_seen: str = ""           # 마지막으로 소스가 실제로 돌려준 시각 (캐시 보관 기한 판단용)
     missed_runs: int = 0          # 소스가 (부분이라도) 동작했는데 이 항목이 안 나온 연속 횟수
+    changes: list = field(default_factory=list)   # 지난 실행 대비 변화 ["version", "updated", "downloads"]
+    last_change_at: str = ""      # 마지막으로 변화를 감지한 시각
     is_new: bool = False          # 최근 발견 창(기본 72시간) 안에 처음 발견됨
     found_this_run: bool = False  # 이번 실행에서 처음 발견됨
 
@@ -70,6 +75,11 @@ class LoraItem:
         for required in ("name", "author", "url"):   # 기본값이 없는 필드
             clean.setdefault(required, "")
         return cls(**clean)
+
+    @property
+    def card_text(self) -> str:
+        """분류·검색에 쓰는 자유 텍스트. 설명과 모델 카드 발췌를 합친 것."""
+        return "\n".join(x for x in (self.description, self.readme_excerpt) if x)
 
     @property
     def is_video(self) -> bool:

@@ -26,6 +26,11 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _within(value: str, days: float) -> bool:
+    dt = _parse_dt(value)
+    return bool(dt and _now() - dt <= timedelta(days=days))
+
+
 def _parse_dt(value: str) -> datetime | None:
     if not value:
         return None
@@ -222,33 +227,51 @@ class NewsService:
             else:
                 errors.append(msg("kept_cache_failed", source=label, n=len(kept)))
 
-        # 이전에 Claude 요약이 있던 항목은 유지
+        # 이전 실행과 비교: 무엇이 바뀌었는지가 이 앱의 존재 이유다.
         for key, it in fetched.items():
             prev = previous.get(key)
-            if prev and prev.summary_source == "claude" and prev.summary_ko:
+            if prev is None or prev is it:
+                continue
+            if prev.summary_source == "claude" and prev.summary_ko:
                 it.summary_ko, it.summary_en, it.summary_source = prev.summary_ko, prev.summary_en, "claude"
-            if prev and prev.description and it.source == "huggingface":
-                # 이미 받아둔 README 발췌를 재사용하되, 이번에 새로 온 태그/예시 블록은 남긴다
-                excerpt = prev.description.split("\n예시 프롬프트:")[0].split("\n태그:")[0].strip()
-                if excerpt and excerpt not in it.description:
-                    it.description = (excerpt + "\n" + it.description).strip()
-                for t in prev.trigger_words:
-                    if t not in it.trigger_words:
-                        it.trigger_words.append(t)
-                it.trigger_words = it.trigger_words[:5]
+            # 이미 읽어둔 모델 카드 발췌를 물려받는다 (덧붙이지 않는다)
+            if prev.readme_excerpt and not it.readme_excerpt:
+                it.readme_excerpt = prev.readme_excerpt
+                it.readme_fetched_at = prev.readme_fetched_at
+            for t in prev.trigger_words:
+                if t not in it.trigger_words:
+                    it.trigger_words.append(t)
+            it.trigger_words = it.trigger_words[:5]
+
+            changes = []
+            if it.version and prev.version and it.version != prev.version:
+                changes.append("version")
+            if it.updated_at and prev.updated_at and it.updated_at > prev.updated_at:
+                changes.append("updated")
+            if prev.downloads and it.downloads >= prev.downloads * 1.2 and it.downloads - prev.downloads >= 500:
+                changes.append("downloads")
+            if changes:
+                it.changes = changes
+                it.last_change_at = now_iso
+            else:
+                it.changes = list(prev.changes)
+                it.last_change_at = prev.last_change_at
 
         items = list(fetched.values())
         self._set_progress("marking_new", n=len(items))
         self._mark_new(items, started)
 
         # README 발췌 보강 (신규/미요약 항목 우선, 최대 N개)
-        need = [it for it in items if it.source == "huggingface" and len(it.description) < 200]
+        # 길이로 고르면 태그가 많은 항목(정보가 제일 많은 항목)이 오히려 걸러진다.
+        need = [it for it in items if it.source == "huggingface" and not it.readme_fetched_at]
         need.sort(key=lambda it: (not it.found_this_run, not it.is_new, -(it.downloads + it.likes * 10)))
         need = need[: self.config.readme_fetch_max]
         if need:
             self._set_progress("reading_cards", n=len(need))
             try:
                 self._readme_enricher(need)
+                for it in need:
+                    it.readme_fetched_at = it.readme_fetched_at or now_iso
             except Exception as e:  # noqa: BLE001
                 errors.append(msg("readme_failed", err=e))
 
@@ -351,7 +374,24 @@ class NewsService:
             it.first_seen = first
             first_dt = _parse_dt(first)
             it.is_new = bool(first_dt and now - first_dt <= window)
+        self._prune(seen, {it.key for it in items}, now)
         self.store.save_seen(seen)
+
+    def _prune(self, seen: dict, live_keys: set, now: datetime) -> None:
+        """지금 목록에도 없고 오래된 기록은 지운다. 안 그러면 두 파일이 무한히 커진다."""
+        keep_after = now - timedelta(days=max(30, self.config.new_window_hours // 24 * 10))
+        dropped = [k for k, v in seen.items()
+                   if k not in live_keys and (_parse_dt(v) or now) < keep_after]
+        for k in dropped:
+            del seen[k]
+        summaries = self.store.load_summaries()
+        stale = [k for k in summaries if k not in live_keys and k not in seen]
+        if stale:
+            for k in stale:
+                del summaries[k]
+            self.store.save_summaries(summaries)
+        if dropped or stale:
+            log.info("정리: seen %d개, summaries %d개", len(dropped), len(stale))
 
     @staticmethod
     def _counts(items: list[LoraItem]) -> dict:
@@ -363,6 +403,8 @@ class NewsService:
                 "civitai": sum(1 for it in subset if it.source == "civitai"),
                 "new": sum(1 for it in subset if it.is_new),
                 "found_this_run": sum(1 for it in subset if it.found_this_run),
+                "found_today": sum(1 for it in subset if _within(it.first_seen, 1)),
+                "changed": sum(1 for it in subset if it.changes),
                 "claude": sum(1 for it in subset if it.summary_source == "claude"),
             }
 

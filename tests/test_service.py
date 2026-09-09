@@ -237,6 +237,74 @@ class NewDetectionTests(unittest.TestCase):
             self.assertEqual(totals[-1], totals[-4], f"수렴해야 한다: {totals}")
             self.assertLessEqual(totals[-1], 12, f"업스트림 6개인데 캐시가 너무 크다: {totals}")
 
+    def test_changes_between_runs_are_recorded(self):
+        def cv_item(**kw):
+            d = dict(key="civitai:1", source="civitai", name="Ghibli", author="a", url="",
+                     created_at="2026-01-01T00:00:00Z")
+            d.update(kw)
+            return LoraItem(**d)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            def run(items):
+                return make_service(tmp, lambda: ([], [], {"queries": 1, "failed": 0}),
+                                    lambda: ([], [], {"queries": 1, "failed": 0}),
+                                    lambda: (items, [], {"queries": 6, "failed": 0}))
+
+            run([cv_item(version="v1.0", updated_at="2026-01-01T00:00:00Z", downloads=1000)]).refresh()
+
+            svc = run([cv_item(version="v3.0", updated_at="2026-09-01T00:00:00Z", downloads=41000)])
+            counts = svc.refresh()
+            it = svc.items[0]
+            self.assertEqual(sorted(it.changes), ["downloads", "updated", "version"])
+            self.assertTrue(it.last_change_at)
+            self.assertEqual(counts["changed"], 1)
+
+            # 아무것도 안 바뀐 실행에서는 새 변화를 만들지 않는다
+            svc2 = run([cv_item(version="v3.0", updated_at="2026-09-01T00:00:00Z", downloads=41000)])
+            svc2.refresh()
+            self.assertEqual(svc2.items[0].last_change_at, it.last_change_at, "변화가 없으면 시각도 그대로")
+
+    def test_readme_excerpts_are_replaced_not_stacked(self):
+        def hf_item():
+            return LoraItem(key="hf:a/b", source="huggingface", name="a/b", author="a", url="",
+                            created_at="2026-01-01T00:00:00Z")
+
+        calls = []
+
+        def enrich(items):
+            calls.append(len(items))
+            for it in items:
+                it.readme_excerpt = "A watercolour style LoRA."
+            return len(items)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            for _ in range(3):
+                cfg = Config()
+                cfg.data_dir = Path(tmp)
+                cfg.claude_enabled = False
+                svc = NewsService(cfg, store=Store(cfg.data_dir),
+                                  hf_fetch=lambda: ([hf_item()], [], {"queries": 16, "failed": 0}),
+                                  gh_fetch=lambda: ([], [], {"queries": 1, "failed": 0}),
+                                  cv_fetch=lambda: ([], [], {"queries": 1, "failed": 0}),
+                                  readme_enricher=enrich)
+                svc.refresh()
+            self.assertEqual(svc.items[0].readme_excerpt, "A watercolour style LoRA.",
+                             "매 실행 앞에 덧붙어 불어나면 안 된다")
+            self.assertEqual(calls, [1], "한 번 읽은 모델 카드는 다시 읽지 않는다")
+
+    def test_old_entries_are_pruned_from_seen_and_summaries(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = Store(Path(tmp))
+            old = (datetime.now(timezone.utc) - timedelta(days=400)).isoformat()
+            store.save_seen({"hf:gone": old, "hf:recent": datetime.now(timezone.utc).isoformat()})
+            store.save_summaries({"hf:gone": {"summary_ko": "x"}, "hf:live": {"summary_ko": "y"}})
+            live = LoraItem(key="hf:live", source="huggingface", name="a/b", author="a", url="")
+            svc = make_service(tmp, lambda: ([live], [], {"queries": 16, "failed": 0}), lambda: ([], []))
+            svc.refresh()
+            self.assertNotIn("hf:gone", store.load_seen(), "오래되고 목록에도 없는 기록은 정리한다")
+            self.assertIn("hf:live", store.load_summaries())
+            self.assertNotIn("hf:gone", store.load_summaries())
+
     def test_unknown_source_name_warns_instead_of_disabling_everything(self):
         hf = self.items_for("huggingface", 2)
         with tempfile.TemporaryDirectory() as tmp:

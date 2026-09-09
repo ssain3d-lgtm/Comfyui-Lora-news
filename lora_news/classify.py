@@ -102,7 +102,7 @@ def _base_texts(item: LoraItem) -> list[str]:
         (item.base_model_raw or "").lower(),
         (item.name or "").lower(),
         " ".join(item.tags or []).lower(),
-        (item.description or "").lower(),
+        item.card_text.lower(),
     ]
 
 
@@ -210,13 +210,38 @@ WF_CATEGORY_RULES: list[tuple[str, list[str]]] = [
 ]
 
 
+# 이름이나 태그에 이 단어가 있으면 그 분류로 결정한다.
+# 키워드 개수만으로 점수를 매기면 목록이 긴 버킷(스타일/화풍 ~100개)이 짧은 버킷(캐릭터 26개)을
+# 늘 이긴다. 'character' 태그가 붙은 애니 캐릭터 LoRA 가 스타일로 가던 문제.
+DECISIVE_KEYWORDS: dict[str, list[str]] = {
+    "캐릭터": ["character", "likeness", "celebrity", "oc", "vtuber", "waifu"],
+    "가속 (저스텝)": ["lightning", "lcm", "turbo", "hyper", "distill", "distilled", "causvid", "lightx2v", "dmd"],
+    "이미지 편집": ["kontext", "inpaint", "inpainting", "outpaint", "relight", "relighting", "try-on", "tryon", "editing"],
+    "디테일 향상": ["detailer", "add-detail", "add detail", "enhancer"],
+    "실사/포토": ["photorealistic", "realism", "photography"],
+    "의상/포즈": ["outfit", "clothing", "costume", "pose", "hairstyle"],
+    "사물/배경/디자인": ["product", "logo", "tattoo", "typography", "architecture", "vehicle"],
+    "영상 모션/카메라": ["motion", "camera", "i2v", "t2v"],
+    "스타일/화풍": ["style", "artstyle", "art style", "aesthetic"],
+    "학습 도구": ["trainer", "training", "dreambooth", "kohya"],
+    "커스텀 노드": ["custom node", "custom nodes", "comfyui node", "comfyui nodes"],
+    "로더/관리": ["loader", "manager"],
+    "병합/변환": ["merge", "merger", "converter"],
+    "자료 모음": ["awesome", "curated"],
+}
+DECISIVE_BONUS = 8
+
+
 def _score_rules(item: LoraItem, rules: list[tuple[str, list[str]]]) -> list[tuple[int, str]]:
     name = (item.name or "").lower().replace("_", " ").replace("-", " ") + " " + (item.name or "").lower()
     tags = " ".join(item.tags or []).lower()
-    desc = (item.description or "").lower()
+    desc = item.card_text.lower()
     scored = []
     for idx, (label, keywords) in enumerate(rules):
         score = 3 * _count(name, keywords) + 2 * _count(tags, keywords) + _count(desc, keywords)
+        decisive = DECISIVE_KEYWORDS.get(label)
+        if decisive and (_any(name, decisive) or _any(tags, decisive)):
+            score += DECISIVE_BONUS
         scored.append((score, label, idx))
     scored.sort(key=lambda t: (-t[0], t[2]))
     return [(s, l) for s, l, _ in scored]
@@ -361,7 +386,7 @@ def extract_hints(item: LoraItem, limit: int = 3) -> list[str]:
     """이름/태그/설명에 가중치를 두어 점수가 높은 힌트를 고른다. 문맥에 맞지 않는 힌트는 제외."""
     name = (item.name or "").lower().replace("_", " ").replace("-", " ") + " " + (item.name or "").lower()
     tags = " ".join(item.tags or []).lower()
-    desc = " ".join([item.description or "", item.example_prompt or ""]).lower()
+    desc = " ".join([item.card_text, item.example_prompt or ""]).lower()
     rules = (WF_HINT_RULES + HINT_RULES) if item.kind == "workflow" else HINT_RULES
     video = _is_video_context(item)
 
@@ -633,42 +658,65 @@ def _short_desc(text: str, n: int = 140) -> str:
     return text[:n] + ("…" if len(text) > n else "")
 
 
+_SENTENCE_END = re.compile(r"(?<=[.!?。])\s+")
+
+
+def lead_sentence(text: str, n: int = 130) -> str:
+    """설명의 첫 문장. 카드 요약에서 칩이 이미 말한 정보를 되풀이하지 않기 위해 쓴다."""
+    text = " ".join((text or "").split())
+    if not text:
+        return ""
+    first = _SENTENCE_END.split(text, 1)[0].strip()
+    if len(first) < 15 and len(text) > len(first):     # "v2." 같은 조각이면 조금 더 붙인다
+        first = text[:n].strip()
+    return _short_desc(first, n)
+
+
 def build_rule_summary(item: LoraItem, lang: str = "ko") -> str:
     if lang == "en":
         return _build_summary_en(item)
     purpose = CATEGORY_PURPOSE.get(item.category, "")
     hints = [h for h in item.hints if h != "성인(NSFW)"]
+    body = lead_sentence(item.card_text)
 
     if item.kind == "workflow":
         head = purpose.replace("워크플로우", "ComfyUI 워크플로우") if purpose else "ComfyUI 워크플로우"
-        if item.base_model not in ("미상/기타", "비디오 모델 (미상)", "범용/도구", "범용/미상"):
+        if item.base_model not in _GENERIC_BASES:
             head = f"{item.base_model} 기반 {head}"
         parts = [head]
         if hints:
             parts.append(", ".join(hints))
         if item.files:
             parts.append(f"JSON {len(item.files)}개")
-        if item.description and item.source == "github":
-            parts.append(_short_desc(item.description))
+        if body:
+            parts.append(body)
         if item.nsfw:
             parts.append("성인(NSFW) 태그")
         return " · ".join(parts)
 
     if item.source == "github":
         parts = [f"GitHub · {item.category}"]
-        if purpose and not item.description:
+        if purpose and not body:
             parts.append(purpose)
         if hints:
             parts.append(", ".join(hints))
-        if item.description:
-            parts.append(_short_desc(item.description))
+        if body:
+            parts.append(body)
         return " · ".join(parts)
 
-    parts = [f"{item.base_model} 기반 {item.category} LoRA"]
-    if hints:
-        parts.append(", ".join(hints))
-    elif purpose:
-        parts.append(purpose)
+    # 베이스 모델과 분류는 카드에 칩으로 이미 떠 있다. 설명이 있으면 그것을 앞에 둔다.
+    parts = []
+    if body:
+        parts.append(body)
+        parts.extend([", ".join(hints[:2])] if hints else [])
+    else:
+        parts.append(f"{item.base_model} 기반 {item.category} LoRA")
+        if hints:
+            parts.append(", ".join(hints))
+        elif purpose:
+            parts.append(purpose)
+    if item.version:
+        parts.append(f"버전 {item.version}")
     if item.trigger_words:
         parts.append("트리거: " + ", ".join(item.trigger_words[:3]))
     if item.nsfw:
@@ -684,6 +732,7 @@ def _build_summary_en(item: LoraItem) -> str:
     hints = [HINT_EN.get(h, h) for h in item.hints if h != "성인(NSFW)"]
     base = base_model_label(item.base_model, "en")
     cat = category_label(item.category, "en")
+    body = lead_sentence(item.card_text)
 
     if item.kind == "workflow":
         head = purpose or "ComfyUI workflow"
@@ -695,27 +744,34 @@ def _build_summary_en(item: LoraItem) -> str:
             parts.append(", ".join(hints))
         if item.files:
             parts.append(f"{len(item.files)} JSON file{'s' if len(item.files) != 1 else ''}")
-        if item.description and item.source == "github":
-            parts.append(_short_desc(item.description))
+        if body:
+            parts.append(body)
         if item.nsfw:
             parts.append("NSFW tag")
         return " · ".join(parts)
 
     if item.source == "github":
         parts = [f"GitHub · {cat}"]
-        if purpose and not item.description:
+        if purpose and not body:
             parts.append(purpose)
         if hints:
             parts.append(", ".join(hints))
-        if item.description:
-            parts.append(_short_desc(item.description))
+        if body:
+            parts.append(body)
         return " · ".join(parts)
 
-    parts = [f"{cat} LoRA for {base}"]
-    if hints:
-        parts.append(", ".join(hints))
-    elif purpose:
-        parts.append(purpose)
+    parts = []
+    if body:
+        parts.append(body)
+        parts.extend([", ".join(hints[:2])] if hints else [])
+    else:
+        parts.append(f"{cat} LoRA for {base}")
+        if hints:
+            parts.append(", ".join(hints))
+        elif purpose:
+            parts.append(purpose)
+    if item.version:
+        parts.append(f"version {item.version}")
     if item.trigger_words:
         parts.append("Trigger: " + ", ".join(item.trigger_words[:3]))
     if item.nsfw:
@@ -736,8 +792,8 @@ def classify(item: LoraItem) -> LoraItem:
     item.category = detect_category(item)
     item.hints = extract_hints(item)
     if not item.trigger_words and item.source != "github" and item.kind == "lora":
-        item.trigger_words = extract_trigger_words(item.description)
-    text = " ".join([item.name, " ".join(item.tags), item.description]).lower()
+        item.trigger_words = extract_trigger_words(item.card_text)
+    text = " ".join([item.name, " ".join(item.tags), item.card_text]).lower()
     if not item.nsfw and _any(text, ["nsfw", "not-for-all-audiences", "explicit", "hentai"]):
         item.nsfw = True
     if item.summary_source != "claude" or not item.summary_ko:

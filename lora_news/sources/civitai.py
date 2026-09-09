@@ -105,14 +105,9 @@ def parse_model(m: dict) -> LoraItem | None:
         nsfw_level = 0
     nsfw = bool(m.get("nsfw")) or nsfw_level >= 4
 
+    # 버전은 별도 필드로 둔다. 설명에 한글 라벨로 박아 넣으면 비교도, 번역도 못 한다.
+    version = str(latest.get("name") or "").strip()[:60]
     desc_parts = []
-    meta = []
-    if latest.get("name"):
-        meta.append(f"최신 버전: {latest['name']}")
-    if latest.get("baseModel"):
-        meta.append(f"베이스: {latest['baseModel']}")
-    if meta:
-        desc_parts.append(" · ".join(meta))
     body = strip_html(m.get("description") or "", max_chars=1000)
     if body:
         desc_parts.append(body)
@@ -134,6 +129,7 @@ def parse_model(m: dict) -> LoraItem | None:
         tags=tags[:30],
         pipeline=pipeline,
         base_model_raw=base_raw,
+        version=version,
         trigger_words=triggers,
         created_at=created_at,
         updated_at=updated_at,

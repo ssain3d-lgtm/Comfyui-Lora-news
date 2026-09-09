@@ -99,7 +99,7 @@ class ClassifyTests(unittest.TestCase):
     def test_summary_and_flags(self):
         it = self.items["hf:someone/pony-anime-character-akira"]
         self.assertTrue(it.nsfw)
-        self.assertIn("Pony (SDXL 계열) 기반 캐릭터 LoRA", it.summary_ko)
+        self.assertTrue(it.summary_ko.startswith("Character LoRA for Pony Diffusion V6 XL."), it.summary_ko)
         self.assertIn("트리거: akira_chr", it.summary_ko)
         self.assertIn("성인(NSFW)", it.summary_ko)
         self.assertEqual(it.summary_source, "rule")
@@ -138,14 +138,26 @@ class ClassifyTests(unittest.TestCase):
     def test_civitai_summary(self):
         it = self.items["civitai:1002"]
         self.assertEqual(it.hints, ["지브리풍", "애니메이션 화풍", "배경/환경"], "이름에 있는 지브리가 먼저")
-        self.assertTrue(it.summary_ko.startswith("Illustrious (SDXL 계열) 기반 스타일/화풍 LoRA · 지브리풍, 애니메이션 화풍"), it.summary_ko)
+        self.assertTrue(it.summary_ko.startswith("Studio Ghibli inspired background"), it.summary_ko)
+        self.assertIn("지브리풍", it.summary_ko)
+        self.assertIn("버전 v2", it.summary_ko)
         self.assertTrue(it.summary_ko.endswith("트리거: ghibli style"), it.summary_ko)
+        self.assertNotIn("Illustrious (SDXL 계열) 기반", it.summary_ko,
+                         "칩에 이미 있는 베이스/분류를 요약에서 되풀이하지 않는다")
+
+    def test_a_summary_without_a_description_falls_back_to_the_template(self):
+        it = classify(LoraItem(key="hf:a/b", source="huggingface", name="a/b-watercolor-lora", author="a", url="",
+                               base_model_raw="FLUX.1", tags=["watercolor", "style"]))
+        self.assertEqual(it.summary_ko, "FLUX.1 기반 스타일/화풍 LoRA · 수채화 느낌")
+        self.assertEqual(it.summary_en, "Style/art style LoRA for FLUX.1 · watercolour look")
 
     def test_english_summaries(self):
-        self.assertEqual(self.items["hf:someone/sd15-watercolor-dreams"].summary_en, "Style/art style LoRA for SD 1.5 · watercolour look")
-        self.assertEqual(self.items["hf:ByteDance/SDXL-Lightning"].summary_en, "Speed-up (few-step) LoRA for SDXL · fast 4-8 step generation")
+        self.assertEqual(self.items["hf:someone/sd15-watercolor-dreams"].summary_en,
+                         "Watercolor painting style for SD 1.5. · watercolour look")
+        self.assertTrue(self.items["hf:ByteDance/SDXL-Lightning"].summary_en.startswith("SDXL-Lightning is a lightning-fast"),
+                        "설명이 있으면 그것을 앞에 둔다")
         pony = self.items["hf:someone/pony-anime-character-akira"].summary_en
-        self.assertTrue(pony.startswith("Character LoRA for Pony (SDXL family)"), pony)
+        self.assertTrue(pony.startswith("Character LoRA for Pony Diffusion V6 XL."), pony)
         self.assertIn("Trigger: akira_chr, red jacket", pony)
         self.assertTrue(pony.endswith("NSFW tag"), pony)
         wf = self.items["civitai:2002"].summary_en
@@ -268,6 +280,30 @@ class RegressionTests(unittest.TestCase):
         hints = self.make("a/watercolor-dreams-lora", raw="SD 1.5", tags=["watercolor", "style"],
                           desc="Adds detail to portrait shots.").hints
         self.assertEqual(hints[0], "수채화 느낌")
+
+    def test_a_character_tag_beats_the_bigger_style_bucket(self):
+        # 스타일/화풍 키워드가 캐릭터보다 네 배 많아서, 개수만 세면 애니 캐릭터 LoRA 가 스타일로 갔다
+        it = self.make("Anya Forger", source="civitai", raw="Illustrious",
+                       tags=["character", "anime", "cartoon"],
+                       desc="Character LoRA from the anime Spy x Family.")
+        self.assertEqual(it.category, "캐릭터")
+        style = self.make("Ghibli Style", source="civitai", raw="FLUX.1", tags=["style", "anime"])
+        self.assertEqual(style.category, "스타일/화풍", "진짜 스타일 LoRA 는 그대로 스타일")
+
+    def test_the_summary_leads_with_prose_not_the_chips(self):
+        it = self.make("Detail Tweaker XL", source="civitai", raw="SDXL 1.0", tags=["detail"],
+                       desc="Adds or removes detail. Use positive weight for more detail.")
+        self.assertTrue(it.summary_ko.startswith("Adds or removes detail."), it.summary_ko)
+        self.assertNotIn("SDXL 기반", it.summary_ko)
+        self.assertNotIn("LoRA for SDXL", it.summary_en)
+
+    def test_the_model_card_excerpt_feeds_classification(self):
+        it = classify(LoraItem(key="hf:a/b", source="huggingface", name="a/b", author="a", url="",
+                               base_model_raw="FLUX.1",
+                               readme_excerpt="A pixel art style LoRA. Trigger words: pxl style"))
+        self.assertEqual(it.category, "스타일/화풍")
+        self.assertIn("픽셀아트", it.hints)
+        self.assertEqual(it.trigger_words, ["pxl style"])
 
     def test_github_base_model_ignores_the_description(self):
         it = self.make("kohya-ss/sd-scripts", source="github",
