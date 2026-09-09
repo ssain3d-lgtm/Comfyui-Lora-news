@@ -146,9 +146,10 @@ def parse_model(m: dict) -> LoraItem | None:
 
 
 def fetch(limit: int = 100, token: str = "", timeout: int = 30, nsfw: bool = False,
-          workers: int = 3) -> tuple[list[LoraItem], list[dict]]:
+          workers: int = 3) -> tuple[list[LoraItem], list[dict], dict]:
     items: dict[str, LoraItem] = {}
     errors: list[dict] = []
+    failed = 0
 
     def run(kind: str, q: dict):
         params = dict(q)
@@ -163,6 +164,7 @@ def fetch(limit: int = 100, token: str = "", timeout: int = 30, nsfw: bool = Fal
             try:
                 kind, data = fut.result()
             except http.HttpError as e:
+                failed += 1
                 if e.status == 403:
                     m = msg("cv_forbidden")
                 elif e.status == 429:
@@ -174,11 +176,13 @@ def fetch(limit: int = 100, token: str = "", timeout: int = 30, nsfw: bool = Fal
                     errors.append(m)
                 continue
             except Exception as e:  # noqa: BLE001
+                failed += 1
                 log.warning("Civitai 요청 실패: %s", e)
                 errors.append(msg("cv_failed", err=e))
                 continue
             rows = (data or {}).get("items") if isinstance(data, dict) else None
             if not isinstance(rows, list):
+                failed += 1
                 errors.append(msg("cv_bad_response", body=str(data)[:120]))
                 continue
             for m in rows:
@@ -190,4 +194,4 @@ def fetch(limit: int = 100, token: str = "", timeout: int = 30, nsfw: bool = Fal
                 if item and item.key not in items:
                     items[item.key] = item
     log.info("Civitai: %d개 수집 (오류 %d)", len(items), len(errors))
-    return list(items.values()), errors
+    return list(items.values()), errors, {"queries": len(QUERIES), "failed": failed}

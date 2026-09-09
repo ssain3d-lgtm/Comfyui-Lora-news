@@ -13,6 +13,7 @@ import json
 import logging
 import mimetypes
 import sys
+import tempfile
 import threading
 import webbrowser
 from http import HTTPStatus
@@ -31,7 +32,7 @@ STATIC_DIR = ROOT / "static"
 log = logging.getLogger("lora_news.app")
 
 
-def make_handler(service: NewsService, allowed_hosts: set[str]):
+def make_handler(service: NewsService, allowed_hosts: set[str], demo: bool = False):
     class Handler(BaseHTTPRequestHandler):
         server_version = f"LoraNews/{__version__}"
 
@@ -88,9 +89,9 @@ def make_handler(service: NewsService, allowed_hosts: set[str]):
                 return
             path = urlparse(self.path).path
             if path == "/api/items":
-                self._json(service.snapshot())
+                self._json({**service.snapshot(), "demo": demo})
             elif path == "/api/status":
-                self._json(service.status)
+                self._json({**service.status, "demo": demo})
             elif path in ("/", "/index.html"):
                 self._static("index.html")
             elif path.startswith("/static/"):
@@ -107,6 +108,11 @@ def make_handler(service: NewsService, allowed_hosts: set[str]):
                 return
             path = urlparse(self.path).path
             if path == "/api/refresh":
+                if demo:
+                    # 데모는 샘플 데이터를 보여주는 용도다. 새로고침을 허용하면 그 가짜 항목이
+                    # 캐시와 seen.json 에 섞여 들어가 다음 진짜 실행의 "신규" 판정을 망친다.
+                    self._json({"started": False, "demo": True, "status": service.status}, status=HTTPStatus.CONFLICT)
+                    return
                 started = service.start_refresh()
                 self._json({"started": started, "status": service.status})
             else:
@@ -150,11 +156,22 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
 
+    # 한글 배너를 cp949/cp1252 콘솔에 찍다가 서버가 뜨기도 전에 죽는 것을 막는다
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            try:
+                stream.reconfigure(encoding="utf-8", errors="replace")
+            except (ValueError, OSError):   # 리다이렉트된 스트림 등
+                pass
+
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S",
     )
     config = Config()
+    if args.demo:
+        # 데모 데이터가 진짜 캐시를 오염시키지 않도록 임시 폴더를 쓴다
+        config.data_dir = Path(tempfile.mkdtemp(prefix="lora-news-demo-"))
     if args.port is not None:
         config.port = args.port
     if args.host is not None:
@@ -176,7 +193,7 @@ def main(argv=None) -> int:
 
     allowed_hosts = {"127.0.0.1", "localhost", "::1", "0.0.0.0", config.host.lower()}
     try:
-        server = ThreadingHTTPServer((config.host, config.port), make_handler(service, allowed_hosts))
+        server = ThreadingHTTPServer((config.host, config.port), make_handler(service, allowed_hosts, demo=args.demo))
     except OSError as e:
         print(f"\n  Cannot listen on {config.host}:{config.port} - {e}")
         print(f"  {config.host}:{config.port} 에서 서버를 열 수 없습니다.")

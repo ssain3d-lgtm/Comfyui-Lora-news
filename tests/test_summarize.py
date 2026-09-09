@@ -83,7 +83,8 @@ class SummarizerTests(unittest.TestCase):
             by = {i.key: i for i in its}
             self.assertEqual(by["hf:a/b"].summary_ko, "FLUX용 스타일 LoRA")
             self.assertEqual(by["hf:a/b"].summary_en, "Style LoRA for FLUX")
-            self.assertEqual(by["hf:a/b"].category, "스타일/화풍")
+            self.assertEqual(by["hf:a/b"].category, "기타",
+                             "카테고리는 규칙 분류기가 소유한다. Claude 는 요약만 쓴다")
             self.assertEqual(by["gh:e/f"].summary_source, "claude")
             cache = json.loads((Path(tmp) / "summaries.json").read_text(encoding="utf-8"))
             self.assertEqual(set(cache), {"hf:a/b", "hf:c/d", "gh:e/f", "civitai:9"})
@@ -96,6 +97,29 @@ class SummarizerTests(unittest.TestCase):
             n2, _ = s2.summarize(fresh)
             self.assertEqual(n2, 0)
             self.assertEqual(stub2.calls, [])
+
+    def test_a_cached_summary_does_not_freeze_the_category(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            s, _ = self.make(tmp, {"items": []})
+            s.store.save_summaries({"hf:a/b": {"summary_ko": "옛날 요약", "summary_en": "old",
+                                               "category": "스타일/화풍", "model": "claude-opus-5",
+                                               "updated_at": "2026-01-01T00:00:00Z"}})
+            it = LoraItem(key="hf:a/b", source="huggingface", name="a/b", author="a", url="",
+                          category="캐릭터", updated_at="2026-01-01T00:00:00Z")
+            s.apply_cached([it])
+            self.assertEqual(it.summary_ko, "옛날 요약")
+            self.assertEqual(it.category, "캐릭터", "캐시된 요약이 현재 분류를 덮어쓰면 안 된다")
+
+    def test_a_cached_summary_expires_when_the_item_changes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            s, _ = self.make(tmp, {"items": []})
+            s.store.save_summaries({"hf:a/b": {"summary_ko": "v1 요약", "model": "claude-opus-5",
+                                               "updated_at": "2026-01-01T00:00:00Z"}})
+            newer = LoraItem(key="hf:a/b", source="huggingface", name="a/b", author="a", url="",
+                             updated_at="2026-06-01T00:00:00Z")
+            self.assertEqual(s.apply_cached([newer]), 0, "업스트림이 갱신되면 요약을 다시 만든다")
+            self.assertEqual(newer.summary_ko, "")
+            self.assertNotIn("hf:a/b", s.store.load_summaries())
 
     def test_refusal_is_reported_not_raised(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -69,9 +69,10 @@ def parse_repo(r: dict, kind: str = "lora") -> LoraItem | None:
     )
 
 
-def fetch(per_page: int = 50, token: str = "", timeout: int = 30, workers: int = 3) -> tuple[list[LoraItem], list[dict]]:
+def fetch(per_page: int = 50, token: str = "", timeout: int = 30, workers: int = 3) -> tuple[list[LoraItem], list[dict], dict]:
     items: dict[str, LoraItem] = {}
     errors: list[dict] = []
+    failed = 0
 
     def run(kind: str, q: str, sort: str):
         params = {"q": q, "sort": sort, "order": "desc", "per_page": per_page}
@@ -83,6 +84,7 @@ def fetch(per_page: int = 50, token: str = "", timeout: int = 30, workers: int =
             try:
                 kind, data = fut.result()
             except http.HttpError as e:
+                failed += 1
                 rate_limited = e.status == 429 or (e.status == 403 and "rate limit" in (e.body or "").lower())
                 m = msg("gh_rate_limited") if rate_limited else (
                     msg("gh_forbidden") if e.status == 403 else msg("gh_failed", err=e))
@@ -91,11 +93,13 @@ def fetch(per_page: int = 50, token: str = "", timeout: int = 30, workers: int =
                     errors.append(m)
                 continue
             except Exception as e:  # noqa: BLE001
+                failed += 1
                 log.warning("GitHub 요청 실패: %s", e)
                 errors.append(msg("gh_failed", err=e))
                 continue
             rows = data.get("items") if isinstance(data, dict) else None
             if not isinstance(rows, list):
+                failed += 1
                 m = msg("gh_failed", err=f"unexpected response: {str(data)[:120]}")
                 if m not in errors:
                     errors.append(m)
@@ -108,4 +112,4 @@ def fetch(per_page: int = 50, token: str = "", timeout: int = 30, workers: int =
                 if item and item.key not in items:
                     items[item.key] = item
     log.info("GitHub: %d개 수집 (오류 %d)", len(items), len(errors))
-    return list(items.values()), errors
+    return list(items.values()), errors, {"queries": len(QUERIES), "failed": failed}

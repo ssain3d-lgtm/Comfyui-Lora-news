@@ -9,7 +9,13 @@ from lora_news.models import LoraItem
 from lora_news.service import NewsService
 from lora_news.store import Store
 
+from lora_news.i18n import msg
+
 FIXTURES = Path(__file__).parent / "fixtures" / "sample_items.json"
+
+
+def msg_partial():
+    return msg("hf_failed", err="flaky query")
 
 
 def fixture_items():
@@ -94,10 +100,10 @@ class ServiceTests(unittest.TestCase):
             errs = svc.status["errors"]
             self.assertTrue(all(isinstance(e, dict) and e.get("ko") and e.get("en") for e in errs), errs)
             self.assertTrue(any(e["key"] == "source_failed" and "Hugging Face 수집 실패" in e["ko"] for e in errs))
-            self.assertTrue(any(e["key"] == "kept_cache" and e["ko"].startswith("Hugging Face ") for e in errs))
+            self.assertTrue(any(e["key"] == "kept_cache_failed" and e["ko"].startswith("Hugging Face ") for e in errs))
             self.assertTrue(any("Hugging Face fetch failed" in e["en"] for e in errs))
             self.assertTrue(any(e["key"] == "cv_forbidden" for e in errs))
-            self.assertEqual(sum(1 for e in errs if e["key"] == "kept_cache"), 2)
+            self.assertEqual(sum(1 for e in errs if e["key"] == "kept_cache_failed"), 2)
             self.assertIsNone(svc.status["progress"])
 
     def test_claude_summaries_applied_and_kept(self):
@@ -164,12 +170,87 @@ class NewDetectionTests(unittest.TestCase):
         hf = self.items_for("huggingface", 5)
         with tempfile.TemporaryDirectory() as tmp:
             make_service(tmp, lambda: (hf, []), lambda: ([], [])).refresh()
-            # 쿼리 일부만 성공한 상태: 항목 1개 + 오류 1개
+            # 16개 쿼리 중 15개 실패, 1개만 성공한 상태
             from lora_news.i18n import msg
-            svc = make_service(tmp, lambda: (hf[:1], [msg("hf_failed", err="boom")]), lambda: ([], []))
+            svc = make_service(tmp, lambda: (hf[:1], [msg("hf_failed", err="boom")], {"queries": 16, "failed": 15}),
+                               lambda: ([], []))
             counts = svc.refresh()
             self.assertEqual(counts["huggingface"], 5, "일부 실패해도 알던 항목이 사라지면 안 된다")
-            self.assertTrue(any(e["key"] == "kept_cache" for e in svc.status["errors"]))
+            kept = [e for e in svc.status["errors"] if e["key"] == "kept_cache_partial"]
+            self.assertEqual(len(kept), 1)
+            self.assertIn("15/16", kept[0]["ko"])
+
+    def test_a_successful_source_does_not_resurrect_its_cache(self):
+        hf = self.items_for("huggingface", 5)
+        with tempfile.TemporaryDirectory() as tmp:
+            make_service(tmp, lambda: (hf, [], {"queries": 16, "failed": 0}), lambda: ([], [])).refresh()
+            # 업스트림에서 두 개가 사라진, 완전히 성공한 실행
+            svc = make_service(tmp, lambda: (hf[:3], [], {"queries": 16, "failed": 0}), lambda: ([], []))
+            counts = svc.refresh()
+            self.assertEqual(counts["huggingface"], 3, "성공한 소스는 사라진 항목을 되살리지 않는다")
+            self.assertEqual([e for e in svc.status["errors"] if e["key"].startswith("kept_cache")], [])
+
+    def test_an_empty_but_successful_run_is_not_reported_as_a_failure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            svc = make_service(tmp,
+                               lambda: ([], [], {"queries": 16, "failed": 0}),
+                               lambda: ([], [], {"queries": 8, "failed": 0}),
+                               lambda: ([], [], {"queries": 6, "failed": 0}))
+            svc.refresh()
+            self.assertEqual(svc.status["errors"], [], "결과가 0개인 것과 실패한 것은 다르다")
+
+    def test_retained_cache_is_bounded_by_age(self):
+        hf = self.items_for("huggingface", 4)
+        with tempfile.TemporaryDirectory() as tmp:
+            make_service(tmp, lambda: (hf, [], {"queries": 16, "failed": 0}), lambda: ([], [])).refresh()
+            # 두 항목의 last_seen 을 오래 전으로 되돌린 뒤 소스를 실패시킨다
+            store = Store(Path(tmp))
+            cache = store.load_cache()
+            old = (datetime.now(timezone.utc) - timedelta(days=60)).isoformat()
+            for row in cache["items"][:2]:
+                row["last_seen"] = old
+            store.save_cache(cache)
+
+            def boom():
+                raise RuntimeError("down")
+
+            svc = make_service(tmp, boom, lambda: ([], []))
+            counts = svc.refresh()
+            self.assertEqual(counts["huggingface"], 2, "오래 안 보인 항목은 캐시에서 정리된다")
+
+    def test_repeated_partial_failure_converges_instead_of_growing(self):
+        """쿼리 하나가 계속 실패해도 캐시가 무한정 불어나면 안 된다."""
+        def batch(run):
+            steady = [LoraItem(key=f"hf:{i}", source="huggingface", name=f"a/{i}", author="a", url="",
+                               created_at="2020-01-01T00:00:00Z") for i in range(5)]
+            gone = [LoraItem(key=f"hf:gone{run}", source="huggingface", name=f"a/g{run}", author="a", url="",
+                             created_at="2020-01-01T00:00:00Z")]
+            return steady + gone
+
+        with tempfile.TemporaryDirectory() as tmp:
+            totals = []
+            for run in range(1, 11):
+                svc = make_service(tmp,
+                                   lambda r=run: (batch(r), [msg_partial()], {"queries": 16, "failed": 1}),
+                                   lambda: ([], [], {"queries": 1, "failed": 0}))
+                totals.append(svc.refresh()["total"])
+            self.assertEqual(totals[-1], totals[-4], f"수렴해야 한다: {totals}")
+            self.assertLessEqual(totals[-1], 12, f"업스트림 6개인데 캐시가 너무 크다: {totals}")
+
+    def test_unknown_source_name_warns_instead_of_disabling_everything(self):
+        hf = self.items_for("huggingface", 2)
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = Config()
+            cfg.data_dir = Path(tmp)
+            cfg.claude_enabled = False
+            cfg.unknown_sources = ("hugginface",)
+            svc = NewsService(cfg, store=Store(cfg.data_dir),
+                              hf_fetch=lambda: (hf, [], {"queries": 16, "failed": 0}),
+                              gh_fetch=lambda: ([], []), cv_fetch=lambda: ([], []),
+                              readme_enricher=lambda items: 0)
+            counts = svc.refresh()
+            self.assertEqual(counts["total"], 2, "오타가 있어도 전체 소스로 계속 동작한다")
+            self.assertTrue(any(e["key"] == "sources_unknown" for e in svc.status["errors"]))
 
     def test_corrupt_cache_entries_are_skipped(self):
         with tempfile.TemporaryDirectory() as tmp:

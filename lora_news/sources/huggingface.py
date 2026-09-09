@@ -134,10 +134,11 @@ def parse_model(m: dict, kind: str = "lora", dataset: bool = False) -> LoraItem 
     )
 
 
-def fetch(limit: int = 100, token: str = "", timeout: int = 30, workers: int = 4) -> tuple[list[LoraItem], list[dict]]:
+def fetch(limit: int = 100, token: str = "", timeout: int = 30, workers: int = 4) -> tuple[list[LoraItem], list[dict], dict]:
     """여러 쿼리를 병렬로 호출해 중복 제거된 LoRA 목록을 반환. (items, errors)"""
     items: dict[str, LoraItem] = {}
     errors: list[dict] = []
+    failed = 0
 
     def run(kind: str, endpoint: str, q: dict):
         params = dict(q)
@@ -150,12 +151,14 @@ def fetch(limit: int = 100, token: str = "", timeout: int = 30, workers: int = 4
             try:
                 kind, endpoint, data = fut.result()
             except Exception as e:  # noqa: BLE001
+                failed += 1
                 log.warning("HuggingFace 요청 실패: %s", e)
                 m = msg("hf_failed", err=e)
                 if m not in errors:
                     errors.append(m)
                 continue
             if not isinstance(data, list):
+                failed += 1
                 m = msg("hf_bad_response", body=str(data)[:120])
                 if m not in errors:
                     errors.append(m)
@@ -171,7 +174,7 @@ def fetch(limit: int = 100, token: str = "", timeout: int = 30, workers: int = 4
                     item.kind = "workflow" if is_workflow_repo(item.name, item.tags) else "lora"
                     items[item.key] = item
     log.info("HuggingFace: %d개 수집 (오류 %d)", len(items), len(errors))
-    return list(items.values()), errors
+    return list(items.values()), errors, {"queries": len(QUERIES), "failed": failed}
 
 
 # ---------------------------------------------------------------------------

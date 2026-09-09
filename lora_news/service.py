@@ -6,6 +6,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeout
 from datetime import datetime, timedelta, timezone
+from time import monotonic as _monotonic
 
 from .classify import BASE_MODEL_EN, CATEGORY_EN, classify
 from .config import Config
@@ -91,6 +92,8 @@ class NewsService:
         """캐시에서 읽은 신규 배지를 현재 시각 기준으로 다시 계산한다."""
         window = timedelta(hours=self.config.new_window_hours)
         for it in items:
+            if not it.last_seen:            # 옛 캐시에는 없던 필드
+                it.last_seen = it.first_seen
             first_dt = _parse_dt(it.first_seen)
             it.is_new = bool(first_dt and now - first_dt <= window)
             it.found_this_run = False   # 이전 실행의 흔적이지 이번 실행의 발견이 아니다
@@ -138,45 +141,86 @@ class NewsService:
         self._set_progress("fetching")
 
         enabled = self.config.sources
+        if self.config.unknown_sources:
+            errors_pre = [msg("sources_unknown", names=", ".join(self.config.unknown_sources))]
+        else:
+            errors_pre = []
         plan = [("huggingface", "Hugging Face", self._hf_fetch),
                 ("github", "GitHub", self._gh_fetch),
                 ("civitai", "Civitai", self._cv_fetch)]
         plan = [row for row in plan if row[0] in enabled]
-        deadline = self.config.refresh_deadline
 
         results: dict[str, list[LoraItem]] = {}
-        errors: list[dict] = []
-        with ThreadPoolExecutor(max_workers=max(1, len(plan))) as pool:
-            futures = {pool.submit(fn): (key, label) for key, label, fn in plan}
-            for fut, (key, label) in futures.items():
-                got, errs = self._safe_result(fut, label, timeout=deadline)
-                results[key] = got
+        verdicts: dict[str, str] = {}
+        stats: dict[str, dict] = {}
+        errors: list[dict] = list(errors_pre)
+
+        # 마감은 새로고침 전체에 대해 한 번만 잡는다. 소스마다 따로 재면 총 대기가 소스 수만큼 늘어난다.
+        pool = ThreadPoolExecutor(max_workers=max(1, len(plan)))
+        try:
+            futures = [(pool.submit(fn), key, label) for key, label, fn in plan]
+            end_at = _monotonic() + max(1, self.config.refresh_deadline)
+            for fut, key, label in futures:
+                remaining = max(0.0, end_at - _monotonic())
+                got, errs, verdict, stat = self._safe_result(fut, label, timeout=remaining)
+                results[key], verdicts[key], stats[key] = got, verdict, stat
                 errors.extend(errs)
+        finally:
+            # 실행 중인 스레드는 죽일 수 없다. 최소한 새로고침이 그것을 기다리며 멈춰 있지는 않게 한다.
+            pool.shutdown(wait=False, cancel_futures=True)
+
         hf_items = results.get("huggingface", [])
         gh_items = results.get("github", [])
         cv_items = results.get("civitai", [])
-        if plan and not any(results.values()):
+        if plan and all(verdicts.get(key) == "failed" for key, _, _ in plan):
             errors.append(msg("all_failed"))
+
+        now_iso = started.isoformat()
+        for it in hf_items + gh_items + cv_items:
+            it.last_seen = now_iso
+            it.missed_runs = 0
 
         previous = {it.key: it for it in self.items}
         fetched: dict[str, LoraItem] = {}
         for it in hf_items + gh_items + cv_items:
             fetched.setdefault(it.key, it)
 
-        # 소스가 오류를 냈거나 아예 비활성이면 그 소스의 이전 캐시 항목을 유지한다.
-        # (쿼리 일부만 실패해도 이미 알던 항목이 사라지면 안 된다)
-        failed_sources = {e.get("source_key") for e in errors if isinstance(e, dict)}
+        # 소스가 실패했거나 일부 쿼리만 성공했으면, 이번에 못 받은 이전 항목을 유지한다.
+        # 다만 무한정 붙들지는 않는다: 오래 안 보인 항목은 정말 사라진 것으로 본다.
+        cutoff = started - timedelta(days=max(1, self.config.cache_retention_days))
         for source in ("huggingface", "github", "civitai"):
-            got = results.get(source)
-            source_failed = source not in enabled or not got or source in failed_sources
-            if not source_failed:
+            verdict = verdicts.get(source, "disabled" if source not in enabled else "failed")
+            if verdict == "ok":
                 continue
-            kept = [it for it in previous.values() if it.source == source]
-            missing = [it for it in kept if it.key not in fetched]
-            if missing and source in enabled:
-                errors.append(msg("kept_cache", source=SOURCE_NAMES.get(source, source), n=len(missing)))
+            kept, stale = [], 0
+            for it in previous.values():
+                if it.source != source or it.key in fetched:
+                    continue
+                if verdict == "partial":
+                    # 소스가 일부라도 응답했는데 계속 안 나온다면 업스트림에서 사라진 것이다.
+                    # 완전 실패나 비활성일 때는 아무 정보도 없으므로 세지 않는다.
+                    it.missed_runs += 1
+                    if it.missed_runs > self.config.max_missed_runs:
+                        stale += 1
+                        continue
+                seen_at = _parse_dt(it.last_seen) or _parse_dt(it.first_seen)
+                if seen_at and seen_at < cutoff:
+                    stale += 1
+                    continue
+                kept.append(it)
             for it in kept:
                 fetched.setdefault(it.key, it)
+            label = SOURCE_NAMES.get(source, source)
+            if stale:
+                log.info("%s: %d일 넘게 안 보인 캐시 항목 %d개 정리", label, self.config.cache_retention_days, stale)
+            if not kept or verdict == "disabled":
+                continue
+            if verdict == "partial":
+                stat = stats.get(source) or {}
+                errors.append(msg("kept_cache_partial", source=label, n=len(kept),
+                                  failed=stat.get("failed", 1), queries=stat.get("queries", 1)))
+            else:
+                errors.append(msg("kept_cache_failed", source=label, n=len(kept)))
 
         # 이전에 Claude 요약이 있던 항목은 유지
         for key, it in fetched.items():
@@ -253,18 +297,34 @@ class NewsService:
         return self._summarizer
 
     @staticmethod
-    def _safe_result(fut, label: str, timeout: float | None = None) -> tuple[list[LoraItem], list[dict]]:
+    def _safe_result(fut, label: str, timeout: float | None = None) -> tuple[list[LoraItem], list[dict], str, dict]:
+        """(항목, 오류, 판정, 쿼리 통계). 판정은 ok / partial / failed."""
         key = {"Hugging Face": "huggingface", "GitHub": "github", "Civitai": "civitai"}.get(label, label)
+
+        def tag(errs):
+            return [dict(e, source_key=key) if isinstance(e, dict) else e for e in errs]
+
         try:
-            items, errors = fut.result(timeout=timeout)
-            return list(items), [dict(e, source_key=key) if isinstance(e, dict) else e for e in errors]
+            outcome = fut.result(timeout=timeout)
         except FuturesTimeout:
             fut.cancel()
             log.warning("%s 수집이 제한 시간(%ss)을 넘겼습니다", label, timeout)
-            return [], [dict(msg("deadline", source=label), source_key=key)]
+            return [], tag([msg("deadline", source=label)]), "failed", {}
         except Exception as e:  # noqa: BLE001
             log.warning("%s 수집 실패: %s", label, e)
-            return [], [dict(msg("source_failed", source=label, err=e), source_key=key)]
+            return [], tag([msg("source_failed", source=label, err=e)]), "failed", {}
+
+        if len(outcome) == 3:
+            items, errs, stat = outcome
+        else:   # 테스트가 넣어주는 (items, errors) 형태
+            items, errs = outcome
+            stat = {"queries": 1, "failed": 1 if errs else 0}
+        items, errs = list(items), list(errs)
+        queries = max(1, int(stat.get("queries") or 1))
+        failed = int(stat.get("failed") or 0)
+        # 판정은 쿼리 성공 여부로 정한다. 결과가 0개인 것과 실패한 것은 다르다.
+        verdict = "failed" if failed >= queries else ("partial" if failed else "ok")
+        return items, tag(errs), verdict, {"queries": queries, "failed": failed}
 
     def _mark_new(self, items: list[LoraItem], now: datetime) -> None:
         seen = self.store.load_seen()

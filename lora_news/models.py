@@ -33,6 +33,8 @@ class LoraItem:
     files: list = field(default_factory=list)   # safetensors 파일명
     thumb: str = ""               # 미리보기 이미지 URL (전체 이용가 등급만)
     first_seen: str = ""          # 이 앱이 처음 발견한 시각
+    last_seen: str = ""           # 마지막으로 소스가 실제로 돌려준 시각 (캐시 보관 기한 판단용)
+    missed_runs: int = 0          # 소스가 (부분이라도) 동작했는데 이 항목이 안 나온 연속 횟수
     is_new: bool = False          # 최근 발견 창(기본 72시간) 안에 처음 발견됨
     found_this_run: bool = False  # 이번 실행에서 처음 발견됨
 

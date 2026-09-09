@@ -92,4 +92,11 @@ class Config:
         known = ("huggingface", "github", "civitai")
         aliases = {"hf": "huggingface", "gh": "github", "cv": "civitai", "civit": "civitai"}
         chosen = [aliases.get(x.strip(), x.strip()) for x in raw_sources.split(",") if x.strip()]
-        self.sources = tuple(s for s in known if s in chosen) if chosen else known
+        self.unknown_sources = tuple(x for x in chosen if x not in known)
+        matched = tuple(s for s in known if s in chosen)
+        # 오타로 전부 꺼지는 대신 전체를 쓰고 경고한다 ("조용히 아무것도 안 함"이 최악의 결과다)
+        self.sources = matched if matched else known
+        # 소스가 실패했을 때 캐시를 얼마나 오래 붙들고 있을지 (일)
+        self.cache_retention_days = _int("LORA_NEWS_CACHE_RETENTION_DAYS", 14)
+        # 소스가 동작하는데도 이 횟수만큼 연속으로 안 나오면 업스트림에서 사라진 것으로 본다
+        self.max_missed_runs = _int("LORA_NEWS_MAX_MISSED_RUNS", 5)

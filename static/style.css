@@ -171,7 +171,7 @@ code { background: var(--panel-2); padding: 1px 5px; border-radius: 5px; font-si
 .files { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; }
 .files code { font-size: 11px; overflow-wrap: anywhere; }
 .dates { color: var(--muted); font-size: 11.5px; display: flex; gap: 10px; flex-wrap: wrap; margin-top: auto; padding-top: 4px; }
-.empty { color: var(--muted); text-align: center; padding: 40px 20px; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.empty-state { color: var(--muted); text-align: center; padding: 40px 20px; display: flex; flex-direction: column; align-items: center; gap: 12px; }
 
 .foot { padding: 14px 24px 30px; color: var(--muted); font-size: 12px; border-top: 1px solid var(--border); }
 

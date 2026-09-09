@@ -31,6 +31,7 @@
     loading: { ko: "불러오는 중…", en: "Loading…" },
     refreshing: { ko: "새로고침 중…", en: "Refreshing…" },
     demo: { ko: "데모 데이터", en: "Demo data" },
+    demo_hint: { ko: "데모 데이터입니다. 새로고침은 꺼져 있습니다.", en: "Demo data. Refresh is disabled." },
     last_update: { ko: "마지막 업데이트", en: "Last update" },
     no_data_yet: { ko: "아직 데이터 없음", en: "No data yet" },
     claude_on: { ko: "Claude 요약 켜짐", en: "Claude summaries on" },
@@ -175,7 +176,8 @@
       const data = await res.json();
       state.items = data.items || [];
       state.labelsEn = data.labels_en || state.labelsEn;
-      state.status = data.status || {};
+      // demo 플래그는 응답 최상위에 온다. status 안으로 넣어 renderStatus 가 한 곳만 보게 한다.
+      state.status = { ...(data.status || {}), demo: !!data.demo };
     } catch (e) {
       state.status = { last_error: t("server_unreachable") + e };
     }
@@ -314,7 +316,8 @@
     box.hidden = errs.length === 0;
     box.textContent = errs.join("\n");
     const btn = $("#refresh-btn");
-    btn.disabled = !!st.refreshing;
+    btn.disabled = !!st.refreshing || !!st.demo;
+    btn.title = st.demo ? t("demo_hint") : "";
     btn.textContent = st.refreshing ? t("refreshing") : t("refresh");
   }
 
@@ -444,7 +447,7 @@
     if (!list.length) {
       const rescue = hasActiveFilters() ? `<button type="button" class="btn ghost" data-clear>${esc(t("clear_filters"))}</button>` : "";
       $("#list").className = "list";
-      $("#list").innerHTML = `<div class="empty"><span>${total ? t("empty_filtered") : (state.status.refreshing ? t("empty_loading") : t("empty_none"))}</span>${rescue}</div>`;
+      $("#list").innerHTML = `<div class="empty-state"><span>${total ? t("empty_filtered") : (state.status.refreshing ? t("empty_loading") : t("empty_none"))}</span>${rescue}</div>`;
       return;
     }
     if (f.group === "none") {

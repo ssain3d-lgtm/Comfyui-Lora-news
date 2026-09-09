@@ -101,7 +101,7 @@ Use the **Refresh** button at any time; the **EN / 한국어** button switches t
 | `--no-browser` | Do not open the browser |
 | `--no-refresh` | Serve the cached data only |
 | `--refresh-only` | Fetch, print a summary and exit (for cron / Task Scheduler) |
-| `--demo` | Run with bundled sample data, no network needed |
+| `--demo` | Run with bundled sample data, no network needed (read-only: refresh is disabled and nothing is written to `data/`) |
 | `--port 9000` | Change the port (default 8765) |
 | `--host 0.0.0.0` | Bind address (default 127.0.0.1, local only) |
 | `-v`, `--verbose` | Debug logging |
@@ -134,7 +134,7 @@ Use the **Refresh** button at any time; the **EN / 한국어** button switches t
 - **Trigger words**: pulled from Hugging Face model cards (`instance_prompt`, "Trigger words:") and Civitai `trainedWords`; click to copy
 - **Sort / search**: new first, added, updated, downloads, likes/stars, name; text search; hide NSFW (on by default)
 - **Cache**: results live in `data/`, so the last result is available even offline
-- **Optional Claude summaries**: with an API key Claude writes more natural English and Korean summaries (only for new items, cached)
+- **Optional Claude summaries**: with an API key Claude writes more natural English and Korean summaries (only for new items, cached, and re-written when the item changes upstream). The category always comes from the rules, so fixing a rule takes effect immediately
 
 ### Environment variables (all optional)
 
@@ -157,7 +157,9 @@ Set these in your shell or in the `.env` file (see `.env.example`).
 | `LORA_NEWS_GH_PER_PAGE` | Items per GitHub query (default 50) |
 | `LORA_NEWS_README_MAX` | Max model cards (READMEs) fetched per run (default 40) |
 | `LORA_NEWS_HTTP_TIMEOUT` | Per-request timeout in seconds (default 30) |
-| `LORA_NEWS_REFRESH_DEADLINE` | Give up on a source after this many seconds (default 180) |
+| `LORA_NEWS_REFRESH_DEADLINE` | Stop waiting for a source after this many seconds (default 180) |
+| `LORA_NEWS_CACHE_RETENTION_DAYS` | How long a cached item survives while its source is failing (default 14) |
+| `LORA_NEWS_MAX_MISSED_RUNS` | Drop a cached item after this many runs where its source worked but did not return it (default 5) |
 | `LORA_NEWS_PORT` / `LORA_NEWS_HOST` | Port / bind address |
 | `LORA_NEWS_DATA_DIR` | Cache folder (default `./data`) |
 
@@ -317,7 +319,7 @@ git pull
 | `--no-browser` | 브라우저 자동 열기 안 함 |
 | `--no-refresh` | 시작 시 수집하지 않고 캐시만 표시 |
 | `--refresh-only` | 서버 없이 수집만 하고 종료 (작업 스케줄러/cron 용) |
-| `--demo` | 네트워크 없이 샘플 데이터로 UI 확인 |
+| `--demo` | 네트워크 없이 샘플 데이터로 UI 확인 (읽기 전용: 새로고침이 꺼지고 `data/` 에 아무것도 쓰지 않음) |
 | `--port 9000` | 포트 변경 (기본 8765) |
 | `--host 0.0.0.0` | 바인드 주소 (기본 127.0.0.1, 로컬 전용) |
 | `-v`, `--verbose` | 상세 로그 |
@@ -351,7 +353,7 @@ git pull
 - **트리거 워드**: HF 모델 카드의 `instance_prompt` / "Trigger words:" 문구, Civitai의 `trainedWords` 자동 추출, 클릭하면 복사
 - **정렬/검색**: 신규 우선, 등록일, 수정일, 다운로드, 좋아요/스타, 이름 · 텍스트 검색 · NSFW 숨기기(기본)
 - **캐시**: 결과는 `data/` 폴더에 저장되어 네트워크가 안 되어도 마지막 결과를 볼 수 있음
-- **(선택) Claude 요약**: API 키가 있으면 더 자연스러운 영문·한글 요약을 생성 (신규 항목만 호출, 캐시됨)
+- **(선택) Claude 요약**: API 키가 있으면 더 자연스러운 영문·한글 요약을 생성 (신규 항목만 호출, 캐시되며 업스트림이 갱신되면 다시 작성). 분류는 항상 규칙이 결정하므로 규칙을 고치면 바로 반영됩니다
 
 ### 환경변수 (모두 선택)
 
@@ -374,7 +376,9 @@ git pull
 | `LORA_NEWS_GH_PER_PAGE` | GitHub 쿼리당 개수 (기본 50) |
 | `LORA_NEWS_README_MAX` | 모델 카드(README)를 읽어올 최대 개수 (기본 40) |
 | `LORA_NEWS_HTTP_TIMEOUT` | 요청 하나의 제한 시간(초, 기본 30) |
-| `LORA_NEWS_REFRESH_DEADLINE` | 한 소스를 이 시간(초)까지만 기다림 (기본 180) |
+| `LORA_NEWS_REFRESH_DEADLINE` | 한 번의 새로고침이 소스를 기다리는 총 시간(초, 기본 180) |
+| `LORA_NEWS_CACHE_RETENTION_DAYS` | 소스가 실패하는 동안 캐시 항목을 붙들고 있을 기간 (기본 14일) |
+| `LORA_NEWS_MAX_MISSED_RUNS` | 소스는 동작하는데 이 횟수만큼 연속으로 안 나오면 캐시에서 정리 (기본 5) |
 | `LORA_NEWS_PORT` / `LORA_NEWS_HOST` | 포트 / 바인드 주소 |
 | `LORA_NEWS_DATA_DIR` | 캐시 폴더 (기본 `./data`) |
 

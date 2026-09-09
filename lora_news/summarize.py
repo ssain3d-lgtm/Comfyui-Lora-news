@@ -104,17 +104,28 @@ class ClaudeSummarizer:
             self.reason = msg("claude_init_failed", err=e)
 
     # ------------------------------------------------------------------
+    def _is_stale(self, item: LoraItem, hit: dict) -> bool:
+        """업스트림이 갱신됐거나 다른 모델로 만든 요약이면 다시 만든다."""
+        if hit.get("model") and hit["model"] != self.model:
+            return True
+        cached_at = hit.get("updated_at")
+        return bool(cached_at and item.updated_at and cached_at != item.updated_at)
+
     def apply_cached(self, items: list[LoraItem]) -> int:
         cache = self.store.load_summaries()
         n = 0
         for it in items:
             hit = cache.get(it.key)
+            if isinstance(hit, dict) and self._is_stale(it, hit):
+                cache.pop(it.key, None)
+                self.store.save_summaries(cache)
+                continue
             if isinstance(hit, dict) and hit.get("summary_ko"):
                 it.summary_ko = hit["summary_ko"]
                 it.summary_en = hit.get("summary_en") or ""
                 it.summary_source = "claude"
-                if hit.get("category") in allowed_categories(it):
-                    it.category = hit["category"]
+                # 카테고리는 규칙 분류기가 소유한다. 캐시된 값을 덮어쓰면 규칙을 고쳐도
+                # 이미 요약된 항목에는 영원히 반영되지 않는다.
                 n += 1
         return n
 
@@ -155,10 +166,8 @@ class ClaudeSummarizer:
                 it.summary_ko = summary
                 it.summary_en = summary_en
                 it.summary_source = "claude"
-                if r.get("category") in allowed_categories(it):
-                    it.category = r["category"]
                 cache[it.key] = {"summary_ko": summary, "summary_en": summary_en, "category": it.category,
-                                 "model": self.model, "ts": now}
+                                 "model": self.model, "updated_at": it.updated_at, "ts": now}
                 done += 1
             self.store.save_summaries(cache)
         return done, errors
