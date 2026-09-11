@@ -98,5 +98,8 @@ class Config:
         self.sources = matched if matched else known
         # 소스가 실패했을 때 캐시를 얼마나 오래 붙들고 있을지 (일)
         self.cache_retention_days = _int("LORA_NEWS_CACHE_RETENTION_DAYS", 14)
+        # 미리보기 이미지: all(전부) / civitai(작은 변형이 있는 Civitai 만) / off
+        mode = os.environ.get("LORA_NEWS_THUMBS", "all").strip().lower()
+        self.thumbs = mode if mode in ("all", "civitai", "off") else "all"
         # 소스가 동작하는데도 이 횟수만큼 연속으로 안 나오면 업스트림에서 사라진 것으로 본다
         self.max_missed_runs = _int("LORA_NEWS_MAX_MISSED_RUNS", 5)

@@ -305,6 +305,32 @@ class NewDetectionTests(unittest.TestCase):
             self.assertIn("hf:live", store.load_summaries())
             self.assertNotIn("hf:gone", store.load_summaries())
 
+    def test_thumbnail_policy_and_render_time_host_check(self):
+        items = [
+            LoraItem(key="civitai:1", source="civitai", name="c", author="a", url="",
+                     thumb="https://image.civitai.com/T/u/width=320/1.jpeg", thumb_large="https://image.civitai.com/T/u/width=1200/1.jpeg"),
+            LoraItem(key="hf:a/b", source="huggingface", name="a/b", author="a", url="",
+                     thumb="https://huggingface.co/a/b/resolve/main/i.png", thumb_large="https://huggingface.co/a/b/resolve/main/i.png"),
+            LoraItem(key="hf:a/evil", source="huggingface", name="a/evil", author="a", url="",
+                     thumb="https://evil.example/t.gif", thumb_large="https://evil.example/t.gif"),
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            for mode, expect in (("all", {"civitai:1": True, "hf:a/b": True, "hf:a/evil": False}),
+                                 ("civitai", {"civitai:1": True, "hf:a/b": False, "hf:a/evil": False}),
+                                 ("off", {"civitai:1": False, "hf:a/b": False, "hf:a/evil": False})):
+                cfg = Config()
+                cfg.data_dir = Path(tmp)
+                cfg.claude_enabled = False
+                cfg.thumbs = mode
+                svc = NewsService(cfg, store=Store(cfg.data_dir),
+                                  hf_fetch=lambda: ([i for i in items if i.source == "huggingface"], [], {"queries": 1, "failed": 0}),
+                                  gh_fetch=lambda: ([], []),
+                                  cv_fetch=lambda: ([i for i in items if i.source == "civitai"], [], {"queries": 1, "failed": 0}),
+                                  readme_enricher=lambda x: 0)
+                svc.refresh()
+                got = {it.key: bool(it.thumb) for it in svc.items}
+                self.assertEqual(got, expect, mode)
+
     def test_unknown_source_name_warns_instead_of_disabling_everything(self):
         hf = self.items_for("huggingface", 2)
         with tempfile.TemporaryDirectory() as tmp:

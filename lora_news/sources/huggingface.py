@@ -8,6 +8,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from .. import http
 from ..i18n import msg
 from ..classify import extract_trigger_words
+from ..images import is_allowed_image, looks_like_preview, resolve_image
 from ..models import LoraItem
 
 log = logging.getLogger(__name__)
@@ -81,13 +82,18 @@ def parse_model(m: dict, kind: str = "lora", dataset: bool = False) -> LoraItem 
         triggers = [instance_prompt.strip()[:80]]
 
     examples: list[str] = []
+    widget_image = ""
     for w in card.get("widget") or []:
         if isinstance(w, dict):
             p = w.get("text") or w.get("prompt") or (w.get("inputs") if isinstance(w.get("inputs"), str) else None)
-            if isinstance(p, str) and p.strip():
+            if isinstance(p, str) and p.strip() and len(examples) < 2:
                 examples.append(p.strip()[:200])
-        if len(examples) >= 2:
-            break
+            # diffusers 카드 형식: widget[].output.url 이 예시 출력 이미지 (추가 요청 없이 얻는 썸네일)
+            out = w.get("output")
+            if not widget_image and isinstance(out, dict) and isinstance(out.get("url"), str):
+                candidate = resolve_image(out["url"], f"https://huggingface.co/{mid}/resolve/main/")
+                if is_allowed_image(candidate) and looks_like_preview(candidate):
+                    widget_image = candidate
 
     files = []
     exts = (".json",) if kind == "workflow" else _WEIGHT_EXT
@@ -128,6 +134,8 @@ def parse_model(m: dict, kind: str = "lora", dataset: bool = False) -> LoraItem 
         likes=int(m.get("likes") or 0),
         nsfw="not-for-all-audiences" in tags,
         files=files,
+        thumb="" if "not-for-all-audiences" in tags else widget_image,
+        thumb_large="" if "not-for-all-audiences" in tags else widget_image,
     )
 
 
@@ -175,58 +183,12 @@ def fetch(limit: int = 100, token: str = "", timeout: int = 30, workers: int = 4
 
 
 # ---------------------------------------------------------------------------
-# 모델 카드(README) 발췌
+# 모델 카드(README) 발췌 - 구현은 lora_news/readme.py (GitHub 과 공용)
 # ---------------------------------------------------------------------------
 
-_FRONT_MATTER = re.compile(r"\A---\s*\n.*?\n---\s*\n", re.DOTALL)
-_MD_IMAGE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
-_MD_LINK = re.compile(r"\[([^\]]*)\]\([^)]*\)")
-_HTML_TAG = re.compile(r"<[^>]+>")
-_CODE_FENCE = re.compile(r"```.*?```", re.DOTALL)
-
-
-def clean_readme(text: str, max_chars: int = 1200) -> str:
-    text = _FRONT_MATTER.sub("", text or "", count=1)
-    text = _CODE_FENCE.sub(" ", text)
-    text = _MD_IMAGE.sub(" ", text)
-    text = _MD_LINK.sub(r"\1", text)
-    text = _HTML_TAG.sub(" ", text)
-    text = re.sub(r"[#>*`|]+", " ", text)
-    text = re.sub(r"[ \t]+", " ", text)
-    text = re.sub(r"\n\s*\n+", "\n", text).strip()
-    return text[:max_chars]
-
-
-def fetch_readme(item: LoraItem, token: str = "", timeout: int = 20) -> tuple[str, list[str]]:
-    """README 발췌와 트리거 워드를 반환. 실패하면 ('', [])."""
-    mid = item.key.split(":", 1)[1]  # "author/name" 또는 "datasets/author/name"
-    url = f"https://huggingface.co/{mid}/raw/main/README.md"
-    try:
-        raw = http.get_text(url, headers={**_headers(token), "Accept": "text/plain"}, timeout=timeout)
-    except Exception as e:  # noqa: BLE001
-        log.debug("README 실패 %s: %s", mid, e)
-        return "", []
-    return clean_readme(raw), extract_trigger_words(raw)
+from ..readme import clean_readme, enrich as _enrich  # noqa: E402
 
 
 def enrich_with_readmes(items: list[LoraItem], token: str = "", timeout: int = 20, workers: int = 6,
                         now: str = "") -> int:
-    """여러 항목의 README를 병렬로 가져와 readme_excerpt/trigger_words 를 채운다. 성공 개수 반환."""
-    ok = 0
-    with ThreadPoolExecutor(max_workers=workers) as pool:
-        futs = {pool.submit(fetch_readme, it, token, timeout): it for it in items}
-        for fut in as_completed(futs):
-            it = futs[fut]
-            try:
-                excerpt, triggers = fut.result()
-            except Exception:  # noqa: BLE001
-                continue
-            it.readme_fetched_at = now or it.readme_fetched_at or "fetched"
-            if excerpt:
-                it.readme_excerpt = excerpt     # 덧붙이지 않고 대체한다 (매번 앞에 붙어 불어나던 문제)
-                ok += 1
-            for t in triggers:
-                if t not in it.trigger_words:
-                    it.trigger_words.append(t)
-            it.trigger_words = it.trigger_words[:5]
-    return ok
+    return _enrich(items, hf_token=token, timeout=timeout, workers=workers, now=now)

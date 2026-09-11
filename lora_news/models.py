@@ -34,7 +34,8 @@ class LoraItem:
     likes: int = 0                # HF likes 또는 GitHub stars
     nsfw: bool = False
     files: list = field(default_factory=list)   # safetensors 파일명
-    thumb: str = ""               # 미리보기 이미지 URL (전체 이용가 등급만)
+    thumb: str = ""               # 미리보기 이미지 URL, 그리드용 (전체 이용가 등급만)
+    thumb_large: str = ""         # 클릭해서 크게 볼 때 쓰는 URL (없으면 thumb 그대로)
     first_seen: str = ""          # 이 앱이 처음 발견한 시각
     last_seen: str = ""           # 마지막으로 소스가 실제로 돌려준 시각 (캐시 보관 기한 판단용)
     missed_runs: int = 0          # 소스가 (부분이라도) 동작했는데 이 항목이 안 나온 연속 횟수

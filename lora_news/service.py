@@ -11,10 +11,12 @@ from time import monotonic as _monotonic
 from .classify import BASE_MODEL_EN, CATEGORY_EN, classify
 from .config import Config
 from .i18n import msg
+from .images import is_allowed_image
 from .models import LoraItem
 from .sources import civitai as cv_source
 from .sources import github as gh_source
 from .sources import huggingface as hf_source
+from . import readme as readme_module
 from .store import Store
 
 log = logging.getLogger(__name__)
@@ -56,8 +58,9 @@ class NewsService:
         self._cv_fetch = cv_fetch or (lambda: cv_source.fetch(
             limit=self.config.civitai_limit, token=self.config.civitai_token, timeout=self.config.http_timeout,
             nsfw=self.config.civitai_nsfw))
-        self._readme_enricher = readme_enricher or (lambda items: hf_source.enrich_with_readmes(
-            items, token=self.config.hf_token, timeout=min(self.config.http_timeout, 20)))
+        self._readme_enricher = readme_enricher or (lambda items: readme_module.enrich(
+            items, hf_token=self.config.hf_token, gh_token=self.config.github_token,
+            timeout=min(self.config.http_timeout, 20)))
         self._summarizer = summarizer
         self._lock = threading.Lock()
         self._refresh_thread: threading.Thread | None = None
@@ -73,6 +76,8 @@ class NewsService:
         cache = self.store.load_cache()
         self.items: list[LoraItem] = self._load_items(cache.get("items"))
         self._refresh_new_flags(self.items, _now())
+        for it in self.items:
+            self._apply_thumb_policy(it)
         self.status["last_refresh"] = cache.get("updated_at")
         self.status["counts"] = cache.get("counts", self._counts(self.items))
         if cache.get("claude"):
@@ -263,7 +268,7 @@ class NewsService:
 
         # README 발췌 보강 (신규/미요약 항목 우선, 최대 N개)
         # 길이로 고르면 태그가 많은 항목(정보가 제일 많은 항목)이 오히려 걸러진다.
-        need = [it for it in items if it.source == "huggingface" and not it.readme_fetched_at]
+        need = [it for it in items if it.source in ("huggingface", "github") and not it.readme_fetched_at]
         need.sort(key=lambda it: (not it.found_this_run, not it.is_new, -(it.downloads + it.likes * 10)))
         need = need[: self.config.readme_fetch_max]
         if need:
@@ -278,6 +283,7 @@ class NewsService:
         self._set_progress("classifying")
         for it in items:
             classify(it)
+            self._apply_thumb_policy(it)
 
         summarized = 0
         summarizer = self._get_summarizer()
@@ -376,6 +382,17 @@ class NewsService:
             it.is_new = bool(first_dt and now - first_dt <= window)
         self._prune(seen, {it.key for it in items}, now)
         self.store.save_seen(seen)
+
+    def _apply_thumb_policy(self, it: LoraItem) -> None:
+        """설정과 허용 호스트에 맞지 않는 미리보기는 지운다. 캐시에서 읽은 값도 여기를 거친다."""
+        mode = self.config.thumbs
+        if mode == "off" or (mode == "civitai" and it.source != "civitai") or it.nsfw:
+            it.thumb = it.thumb_large = ""
+            return
+        if not is_allowed_image(it.thumb):
+            it.thumb = ""
+        if not is_allowed_image(it.thumb_large):
+            it.thumb_large = it.thumb
 
     def _prune(self, seen: dict, live_keys: set, now: datetime) -> None:
         """지금 목록에도 없고 오래된 기록은 지운다. 안 그러면 두 파일이 무한히 커진다."""

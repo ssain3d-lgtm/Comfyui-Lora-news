@@ -12,6 +12,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from .. import http
 from ..i18n import msg
 from ..models import LoraItem
+from ..images import civitai_variant, is_allowed_image
 from ..text import strip_html
 
 log = logging.getLogger(__name__)
@@ -78,11 +79,12 @@ def parse_model(m: dict) -> LoraItem | None:
             if not isinstance(img, dict) or img.get("type") not in (None, "image"):
                 continue
             url = img.get("url")
+            raw_level = img.get("nsfwLevel")
             try:
-                level = int(img.get("nsfwLevel") or 0)
+                level = 99 if raw_level is None else int(raw_level)   # 등급을 모르면 표시하지 않는다
             except (TypeError, ValueError):
                 level = 99
-            if isinstance(url, str) and url.startswith("https://") and level <= 1 and not img.get("nsfw"):
+            if isinstance(url, str) and is_allowed_image(url) and level <= 1 and not img.get("nsfw"):
                 thumb = url
                 break
         if thumb:
@@ -137,7 +139,8 @@ def parse_model(m: dict) -> LoraItem | None:
         likes=int(stats.get("thumbsUpCount") or stats.get("favoriteCount") or 0),
         nsfw=nsfw,
         files=files,
-        thumb="" if nsfw else thumb,
+        thumb="" if nsfw else civitai_variant(thumb, 320),        # 그리드: 약 20~40KB
+        thumb_large="" if nsfw else civitai_variant(thumb, 1200),  # 확대 보기
     )
 
 

@@ -17,6 +17,7 @@
     filters: loadPrefs({
       lang: defaultLang(), kind: "lora", q: "", source: "all", base: null, cat: null,
       onlyNew: false, onlyChanged: false, since: "all", hideNsfw: true, sort: "new", group: "none",
+      thumbs: true,
     }),
     pollTimer: null,
   };
@@ -71,6 +72,10 @@
     change_downloads: { ko: "다운로드 급증", en: "downloads jumped" },
     version: { ko: "버전", en: "Version" },
     readme: { ko: "모델 카드", en: "Model card" },
+    show_thumbs: { ko: "썸네일", en: "Thumbnails" },
+    enlarge: { ko: "크게 보기", en: "Enlarge" },
+    close: { ko: "닫기", en: "Close" },
+    open_source: { ko: "원본 페이지 열기", en: "Open source page" },
     group_none: { ko: "묶기: 없음", en: "Group: none" },
     group_category: { ko: "묶기: 용도별", en: "Group: by purpose" },
     group_base: { ko: "묶기: 베이스 모델별", en: "Group: by base model" },
@@ -132,6 +137,17 @@
   function tm(m) {  // 백엔드 메시지 dict {ko,en} 또는 문자열
     if (m && typeof m === "object") return m[lang()] || m.ko || "";
     return m == null ? "" : String(m);
+  }
+  const IMAGE_HOSTS = ["image.civitai.com", "huggingface.co", "cdn-uploads.huggingface.co", "cdn-lfs.huggingface.co",
+    "cdn-lfs-us-1.huggingface.co", "cdn-lfs.hf.co", "raw.githubusercontent.com", "user-images.githubusercontent.com", "github.com"];
+  function safeImage(url) {
+    if (typeof url !== "string" || !url.startsWith("https://")) return "";
+    let host = "";
+    try { host = new URL(url).hostname.toLowerCase(); } catch (e) { return ""; }
+    return IMAGE_HOSTS.some((h) => host === h || host.endsWith("." + h)) ? url : "";
+  }
+  function safeLink(url) {
+    return (typeof url === "string" && /^https?:\/\//i.test(url)) ? url : "#";
   }
   function baseLabel(v) { return lang() === "en" ? (state.labelsEn.base_models[v] || v) : v; }
   function catLabel(v) { return lang() === "en" ? (state.labelsEn.categories[v] || v) : v; }
@@ -412,6 +428,7 @@
     $("#search").value = f.q;
     $("#only-new").checked = f.onlyNew;
     $("#only-changed").checked = f.onlyChanged;
+    $("#show-thumbs").checked = f.thumbs;
     $("#since").value = f.since;
     $("#hide-nsfw").checked = f.hideNsfw;
     $("#sort").value = f.sort;
@@ -455,8 +472,11 @@
         `${readme ? `<p><b>${t("readme")}</b><br>${esc(readme)}</p>` : ""}` +
         `${desc ? `<p>${esc(desc)}</p>` : ""}${files}</details>`
       : "";
-    const thumb = it.thumb
-      ? `<img class="thumb" src="${esc(it.thumb)}" alt="${esc(t("preview_of", { name: it.name }))}" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">`
+    const small = state.filters.thumbs ? safeImage(it.thumb) : "";
+    const large = safeImage(it.thumb_large) || small;
+    const thumb = small
+      ? `<button type="button" class="thumb-btn" data-large="${esc(large)}" data-name="${esc(it.name)}" data-url="${esc(safeLink(it.url))}" title="${t("enlarge")}">` +
+        `<img class="thumb" src="${esc(small)}" alt="${esc(t("preview_of", { name: it.name }))}" loading="lazy" decoding="async" fetchpriority="low" referrerpolicy="no-referrer" onerror="this.parentElement.remove()"></button>`
       : "";
     return `<article class="card${it.is_new ? " new" : ""}">
       ${thumb}
@@ -471,7 +491,7 @@
         </div>
         <div class="metrics">${metrics(it)}</div>
       </div>
-      <div class="title"><a href="${esc(it.url)}" target="_blank" rel="noopener">${esc(it.name)}</a></div>
+      <div class="title"><a href="${esc(safeLink(it.url))}" target="_blank" rel="noopener">${esc(it.name)}</a></div>
       <div class="author">${esc(it.author)}${it.pipeline && !isWf ? " · " + esc(it.pipeline) : ""}</div>
       <div class="tags"><span class="tag base">${esc(baseLabel(it.base_model))}</span><span class="tag cat">${esc(catLabel(it.category))}</span>${it.version ? `<span class="tag ver">${esc(it.version)}</span>` : ""}${(it.tags || []).slice(0, 4).map((x) => `<span class="tag">${esc(x)}</span>`).join("")}</div>
       <div class="summary">${esc(summaryOf(it))}</div>
@@ -518,6 +538,31 @@
   }
 
   // ---------------------------------------------------------------- events
+  // ---------------------------------------------------------------- lightbox
+  let lastFocus = null;
+  function openLightbox(large, name, url) {
+    const box = $("#lightbox");
+    const img = $("#lightbox-img");
+    lastFocus = document.activeElement;
+    img.src = "";
+    img.alt = t("preview_of", { name });
+    $("#lightbox-name").textContent = name;
+    $("#lightbox-link").href = url || "#";
+    $("#lightbox-link").hidden = !url || url === "#";
+    box.hidden = false;
+    document.body.classList.add("no-scroll");
+    img.src = large;            // 큰 이미지는 클릭했을 때만 받는다
+    $("#lightbox-close").focus();
+  }
+  function closeLightbox() {
+    const box = $("#lightbox");
+    if (box.hidden) return;
+    box.hidden = true;
+    $("#lightbox-img").src = "";
+    document.body.classList.remove("no-scroll");
+    if (lastFocus && lastFocus.focus) lastFocus.focus();
+  }
+
   function clearFilters() {
     Object.assign(state.filters, { q: "", source: "all", base: null, cat: null, onlyNew: false,
                                    onlyChanged: false, since: "all" });
@@ -564,8 +609,15 @@
       const el = e.target.closest("[data-cat]"); if (!el) return;
       state.filters.cat = el.dataset.cat || null; savePrefs(); renderFacets(); renderList();
     });
+    $("#show-thumbs").addEventListener("change", (e) => { state.filters.thumbs = e.target.checked; savePrefs(); renderList(); });
+    $("#lightbox").addEventListener("click", (e) => {
+      if (e.target === e.currentTarget || e.target.closest("[data-close]")) closeLightbox();
+    });
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeLightbox(); });
     $("#list").addEventListener("click", async (e) => {
       if (e.target.closest("[data-clear]")) { clearFilters(); return; }
+      const tb = e.target.closest(".thumb-btn");
+      if (tb) { openLightbox(tb.dataset.large, tb.dataset.name, tb.dataset.url); return; }
       const el = e.target.closest("[data-copy]"); if (!el) return;
       try {
         await navigator.clipboard.writeText(el.dataset.copy);

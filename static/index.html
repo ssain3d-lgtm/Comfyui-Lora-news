@@ -42,6 +42,7 @@
     <label class="check"><input type="checkbox" id="only-new"> <span data-i18n="only_new">신규만</span></label>
     <label class="check"><input type="checkbox" id="only-changed"> <span data-i18n="only_changed">변경된 것만</span></label>
     <label class="check"><input type="checkbox" id="hide-nsfw" checked> <span data-i18n="hide_nsfw">NSFW 숨기기</span></label>
+    <label class="check"><input type="checkbox" id="show-thumbs" checked> <span data-i18n="show_thumbs">썸네일</span></label>
   </div>
   <details class="facets" id="facets" open>
     <summary data-i18n="facets_summary">상세 필터</summary>
@@ -58,6 +59,17 @@
 <main id="list" class="list"></main>
 
 <footer class="foot" id="footer"></footer>
+
+<div id="lightbox" class="lightbox" role="dialog" aria-modal="true" aria-labelledby="lightbox-name" hidden>
+  <div class="lightbox-panel">
+    <div class="lightbox-bar">
+      <span id="lightbox-name" class="lightbox-name"></span>
+      <a id="lightbox-link" class="btn ghost small" target="_blank" rel="noopener" data-i18n="open_source">원본 페이지 열기</a>
+      <button id="lightbox-close" type="button" class="btn ghost small" data-close data-i18n="close">닫기</button>
+    </div>
+    <img id="lightbox-img" class="lightbox-img" alt="" referrerpolicy="no-referrer" decoding="async">
+  </div>
+</div>
 
 <script src="/static/app.js"></script>
 </body>

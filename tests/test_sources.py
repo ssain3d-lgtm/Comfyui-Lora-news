@@ -98,20 +98,20 @@ class CivitaiParseTests(unittest.TestCase):
     def test_thumbnail_only_uses_all_ages_images(self):
         m = dict(self.MODEL)
         m["modelVersions"] = [dict(self.MODEL["modelVersions"][0], images=[
-            {"url": "https://img/explicit.jpg", "nsfwLevel": 8},
-            {"url": "https://img/ok.jpg", "nsfwLevel": 1},
+            {"url": "https://image.civitai.com/T/u/width=450/explicit.jpg", "nsfwLevel": 8},
+            {"url": "https://image.civitai.com/T/u/width=450/ok.jpg", "nsfwLevel": 1},
         ])]
-        self.assertEqual(parse_civitai(m).thumb, "https://img/ok.jpg")
+        self.assertEqual(parse_civitai(m).thumb, "https://image.civitai.com/T/u/width=320/ok.jpg")
 
         only_explicit = dict(m)
-        only_explicit["modelVersions"] = [dict(m["modelVersions"][0], images=[{"url": "https://img/x.jpg", "nsfwLevel": 8}])]
+        only_explicit["modelVersions"] = [dict(m["modelVersions"][0], images=[{"url": "https://image.civitai.com/T/u/width=450/x.jpg", "nsfwLevel": 8}])]
         self.assertEqual(parse_civitai(only_explicit).thumb, "", "등급이 높은 이미지는 쓰지 않는다")
 
         nsfw_item = dict(m, nsfw=True)
         self.assertEqual(parse_civitai(nsfw_item).thumb, "", "NSFW 항목은 미리보기를 붙이지 않는다")
 
         insecure = dict(m)
-        insecure["modelVersions"] = [dict(m["modelVersions"][0], images=[{"url": "http://img/ok.jpg", "nsfwLevel": 1}])]
+        insecure["modelVersions"] = [dict(m["modelVersions"][0], images=[{"url": "http://image.civitai.com/T/u/ok.jpg", "nsfwLevel": 1}])]
         self.assertEqual(parse_civitai(insecure).thumb, "", "https 가 아니면 쓰지 않는다")
 
     def test_parse_workflow_and_nsfw(self):

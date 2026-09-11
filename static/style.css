@@ -135,9 +135,31 @@ code { background: var(--panel-2); padding: 1px 5px; border-radius: 5px; font-si
 }
 .card:hover { border-color: var(--border-hover); }
 .card.new { border-color: rgba(255, 180, 84, .55); box-shadow: 0 0 0 1px rgba(255, 180, 84, .15) inset; }
+.thumb-btn {
+  display: block; width: 100%; padding: 0; border: 0; background: transparent; cursor: zoom-in;
+  border-radius: 8px; overflow: hidden;
+}
 .thumb {
   display: block; width: 100%; aspect-ratio: 3 / 2; object-fit: cover;
   border-radius: 8px; background: var(--panel-2); border: 1px solid var(--border);
+  transition: filter .12s ease;
+}
+.thumb-btn:hover .thumb { filter: brightness(1.08); }
+
+.no-scroll { overflow: hidden; }
+.lightbox[hidden] { display: none; }
+.lightbox {
+  position: fixed; inset: 0; z-index: 50; background: rgba(6, 8, 12, .88);
+  display: flex; align-items: center; justify-content: center; padding: 20px; cursor: zoom-out;
+}
+.lightbox-panel {
+  max-width: min(1400px, 96vw); max-height: 94vh; display: flex; flex-direction: column; gap: 10px; cursor: default;
+}
+.lightbox-bar { display: flex; align-items: center; gap: 10px; }
+.lightbox-name { flex: 1; font-weight: 600; overflow-wrap: anywhere; }
+.lightbox-img {
+  display: block; max-width: 100%; max-height: calc(94vh - 52px); object-fit: contain;
+  border-radius: 10px; background: var(--panel-2); border: 1px solid var(--border);
 }
 .card-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .badges { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }

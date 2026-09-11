@@ -119,7 +119,8 @@ Use the **Refresh** button at any time; the **EN / 한국어** button switches t
 | "Civitai returned 403" | Cloudflare blocked the request; add `CIVITAI_API_KEY` to `.env`. The previous cache is kept meanwhile |
 | Page is empty on first run | The fetch is still running (spinner at the top right); wait for it to finish |
 | All three sources failed | You are offline or behind a proxy. The app keeps the previous cache; use `python app.py --demo` to check the UI |
-| Thumbnails do not appear | Images load from Civitai's CDN. If it is blocked the card simply drops the image |
+| Thumbnails do not appear | Images load from Civitai's CDN, huggingface.co and raw.githubusercontent.com. If a host is blocked the card simply drops the image |
+| Page feels slow to scroll | Hugging Face and GitHub images are whatever size the author uploaded (often 0.5 to 3 MB). They load lazily as you scroll; set `LORA_NEWS_THUMBS=civitai` to keep only the small resized ones, or untick "Thumbnails" |
 | Want to verify the UI without network | `python app.py --demo` |
 
 ### Features
@@ -131,7 +132,7 @@ Use the **Refresh** button at any time; the **EN / 한국어** button switches t
 - **Classification**: chips for base model and purpose; group by purpose, base model or source. Workflows use their own categories: image generation, video generation, editing/inpainting, upscale/fix, ControlNet/pose, character consistency, training/tools, collections/templates
 - **Summaries**: bilingual one-liners that lead with the model's own description when it has one, falling back to a base-model and purpose template when it does not. The base model and purpose are already chips on the card, so the summary does not repeat them
 - **Language**: the page opens in your browser's language and the EN / 한국어 button switches it
-- **Preview thumbnails**: Civitai items show their preview image (all-ages images only; NSFW items never get one)
+- **Preview thumbnails**: Civitai items show a small preview (about 20 to 40 KB each, via Civitai's resizing CDN); Hugging Face items use the example image from the model card; GitHub workflow repositories use the first image in their README. Click any thumbnail to enlarge it. All-ages images only, never for NSFW items, and only from known hosts. Turn them off with the "Thumbnails" checkbox or `LORA_NEWS_THUMBS=off`
 - **Pick your sources**: `LORA_NEWS_SOURCES=huggingface,github` skips a source that is blocked for you
 - **Trigger words**: pulled from Hugging Face model cards (`instance_prompt`, "Trigger words:") and Civitai `trainedWords`; click to copy
 - **Sort / search**: new first, added, updated, downloads, likes/stars, name; text search; hide NSFW (on by default)
@@ -150,6 +151,7 @@ Set these in your shell or in the `.env` file (see `.env.example`).
 | `LORA_NEWS_CIVITAI_NSFW` | `1` to also fetch NSFW items from Civitai (off by default; they can still be hidden in the UI) |
 | `LORA_NEWS_CIVITAI_LIMIT` | Items per Civitai query (default 100, max 100) |
 | `LORA_NEWS_SOURCES` | Use only some sources, e.g. `huggingface,github` (`hf` / `gh` / `cv` also work) |
+| `LORA_NEWS_THUMBS` | `all` (default), `civitai` (small resized images only) or `off` |
 | `ANTHROPIC_API_KEY` | Enables Claude summaries; needs `pip install anthropic` |
 | `LORA_NEWS_CLAUDE` | `0` disables Claude even with a key; `1` enables it with an `ant auth login` profile |
 | `LORA_NEWS_CLAUDE_MODEL` | Default `claude-opus-5` |
@@ -342,7 +344,8 @@ git pull
 | "Civitai 접근 거부(403)" | Cloudflare 차단: `.env` 에 `CIVITAI_API_KEY` 추가. 그동안은 이전 캐시 유지 |
 | 첫 실행에 화면이 비어 있음 | 수집이 진행 중(오른쪽 위 회전 표시). 끝날 때까지 기다리면 됨 |
 | 세 소스가 모두 실패 | 오프라인이거나 프록시에 막힌 상태입니다. 이전 캐시를 유지하며, `python app.py --demo` 로 화면만 확인할 수 있습니다 |
-| 썸네일이 안 보임 | 이미지는 Civitai CDN 에서 불러옵니다. 막혀 있으면 카드에서 이미지만 빠집니다 |
+| 썸네일이 안 보임 | 이미지는 Civitai CDN, huggingface.co, raw.githubusercontent.com 에서 불러옵니다. 막혀 있으면 카드에서 이미지만 빠집니다 |
+| 스크롤이 무겁게 느껴짐 | Hugging Face 와 GitHub 이미지는 올린 사람이 올린 크기 그대로입니다(보통 0.5~3MB). 스크롤할 때 그때그때 불러오며, `LORA_NEWS_THUMBS=civitai` 로 작은 이미지만 남기거나 "썸네일" 체크를 끄면 됩니다 |
 | 네트워크 없이 화면만 확인 | `python app.py --demo` |
 
 ### 기능
@@ -355,7 +358,7 @@ git pull
   워크플로우는 이미지 생성 · 영상 생성 · 편집/인페인팅 · 업스케일/보정 · 컨트롤넷/포즈 · 캐릭터 일관성 · 학습/도구 · 모음/템플릿으로 분류
 - **한/영 요약**: 설명이 있으면 그 문장을 앞세우고, 없으면 베이스 모델과 용도 템플릿으로 대체합니다. 베이스 모델과 용도는 이미 칩으로 떠 있어서 요약에서 되풀이하지 않습니다
 - **언어**: 브라우저 언어로 열리고 EN / 한국어 버튼으로 전환합니다
-- **미리보기 썸네일**: Civitai 항목은 미리보기 이미지를 함께 보여줍니다 (전체 이용가 이미지만, NSFW 항목은 표시하지 않음)
+- **미리보기 썸네일**: Civitai 는 크기 조절 CDN 을 써서 장당 20~40KB 짜리 작은 이미지를, Hugging Face 는 모델 카드의 예시 이미지를, GitHub 워크플로우 저장소는 README 의 첫 이미지를 보여줍니다. 클릭하면 크게 볼 수 있습니다. 전체 이용가 이미지만, NSFW 항목은 제외, 알려진 호스트만 허용합니다. "썸네일" 체크박스나 `LORA_NEWS_THUMBS=off` 로 끌 수 있습니다
 - **소스 선택**: `LORA_NEWS_SOURCES=huggingface,github` 로 막혀 있는 소스를 건너뛸 수 있습니다
 - **트리거 워드**: HF 모델 카드의 `instance_prompt` / "Trigger words:" 문구, Civitai의 `trainedWords` 자동 추출, 클릭하면 복사
 - **정렬/검색**: 신규 우선, 등록일, 수정일, 다운로드, 좋아요/스타, 이름 · 텍스트 검색 · NSFW 숨기기(기본)
@@ -374,6 +377,7 @@ git pull
 | `LORA_NEWS_CIVITAI_NSFW` | `1` 이면 Civitai에서 NSFW 항목도 받아옴 (기본은 제외, 받아온 뒤에도 화면에서 숨기기 가능) |
 | `LORA_NEWS_CIVITAI_LIMIT` | Civitai 쿼리당 개수 (기본 100, 최대 100) |
 | `LORA_NEWS_SOURCES` | 일부 소스만 사용, 예: `huggingface,github` (`hf` / `gh` / `cv` 도 인식) |
+| `LORA_NEWS_THUMBS` | `all`(기본), `civitai`(크기 조절된 작은 이미지만), `off` |
 | `ANTHROPIC_API_KEY` | 설정하면 Claude로 요약 생성. `pip install anthropic` 필요 |
 | `LORA_NEWS_CLAUDE` | `0` 으로 두면 키가 있어도 Claude 요약 끔, `1` 이면 `ant auth login` 프로필로도 사용 |
 | `LORA_NEWS_CLAUDE_MODEL` | 기본 `claude-opus-5` |
