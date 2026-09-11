@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from . import http
 from .classify import extract_trigger_words
-from .images import first_image, normalize_repo_base
+from .images import add_images, gallery_from_markdown, normalize_repo_base
 from .models import LoraItem
 
 log = logging.getLogger(__name__)
@@ -45,8 +45,8 @@ def readme_location(item: LoraItem) -> tuple[str, str] | None:
 
 
 def fetch_readme(item: LoraItem, hf_token: str = "", gh_token: str = "", timeout: int = 20) -> dict:
-    """{"excerpt", "triggers", "image"}. 실패하면 빈 값들."""
-    empty = {"excerpt": "", "triggers": [], "image": ""}
+    """{"excerpt", "triggers", "images"}. 실패하면 빈 값들."""
+    empty = {"excerpt": "", "triggers": [], "images": []}
     loc = readme_location(item)
     if not loc:
         return empty
@@ -63,7 +63,7 @@ def fetch_readme(item: LoraItem, hf_token: str = "", gh_token: str = "", timeout
     return {
         "excerpt": clean_readme(raw),
         "triggers": extract_trigger_words(raw) if item.kind == "lora" else [],
-        "image": first_image(raw, normalize_repo_base(base)),
+        "images": gallery_from_markdown(raw, normalize_repo_base(base)),
     }
 
 
@@ -87,7 +87,6 @@ def enrich(items: list[LoraItem], hf_token: str = "", gh_token: str = "", timeou
                 if t not in it.trigger_words:
                     it.trigger_words.append(t)
             it.trigger_words = it.trigger_words[:5]
-            if got["image"] and not it.thumb and not it.nsfw:
-                it.thumb = got["image"]
-                it.thumb_large = got["image"]
+            if got["images"] and not it.nsfw:
+                add_images(it, got["images"])   # 위젯 이미지 뒤에 모델 카드 이미지를 이어 붙인다
     return ok

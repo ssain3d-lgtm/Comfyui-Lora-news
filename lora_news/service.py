@@ -11,7 +11,7 @@ from time import monotonic as _monotonic
 from .classify import BASE_MODEL_EN, CATEGORY_EN, classify
 from .config import Config
 from .i18n import msg
-from .images import is_allowed_image
+from .images import add_images, sanitize_gallery
 from .models import LoraItem
 from .sources import civitai as cv_source
 from .sources import github as gh_source
@@ -243,6 +243,9 @@ class NewsService:
             if prev.readme_excerpt and not it.readme_excerpt:
                 it.readme_excerpt = prev.readme_excerpt
                 it.readme_fetched_at = prev.readme_fetched_at
+            # 모델 카드에서 얻은 이미지도 물려받는다. 카드를 다시 읽지 않으므로 안 그러면 두 번째 실행부터 사라진다.
+            if prev.images and it.source in ("huggingface", "github") and not it.nsfw:
+                add_images(it, [p["large"] for p in prev.images])
             for t in prev.trigger_words:
                 if t not in it.trigger_words:
                     it.trigger_words.append(t)
@@ -387,12 +390,15 @@ class NewsService:
         """설정과 허용 호스트에 맞지 않는 미리보기는 지운다. 캐시에서 읽은 값도 여기를 거친다."""
         mode = self.config.thumbs
         if mode == "off" or (mode == "civitai" and it.source != "civitai") or it.nsfw:
+            it.images = []
             it.thumb = it.thumb_large = ""
             return
-        if not is_allowed_image(it.thumb):
-            it.thumb = ""
-        if not is_allowed_image(it.thumb_large):
-            it.thumb_large = it.thumb
+        gallery = sanitize_gallery(it.images)
+        if not gallery and it.thumb:   # 갤러리가 생기기 전 캐시: 한 장짜리 갤러리로 올린다
+            gallery = sanitize_gallery([{"thumb": it.thumb, "large": it.thumb_large or it.thumb}])
+        it.images = gallery
+        it.thumb = gallery[0]["thumb"] if gallery else ""
+        it.thumb_large = gallery[0]["large"] if gallery else ""
 
     def _prune(self, seen: dict, live_keys: set, now: datetime) -> None:
         """지금 목록에도 없고 오래된 기록은 지운다. 안 그러면 두 파일이 무한히 커진다."""

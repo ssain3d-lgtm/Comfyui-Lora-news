@@ -93,21 +93,78 @@ def resolve_image(url: str, base: str) -> str:
     return url
 
 
+MAX_IMAGES = 8   # 항목당 갤러리 상한. 브라우저는 현재 장만 받으므로 개수는 전송량이 아니라 캐시 크기 문제다
+
+
+def gallery_from_markdown(markdown: str, base: str, limit: int = MAX_IMAGES, scan: int = 40) -> list[str]:
+    """모델 카드에서 미리보기로 쓸 만한 이미지들. 문서 순서대로, 중복 없이, 최대 limit 개."""
+    if not markdown:
+        return []
+    found: list[str] = []
+    candidates = _MD_IMG.findall(markdown) + _HTML_IMG.findall(markdown)
+    for raw in candidates[:scan]:
+        url = resolve_image(raw, base)
+        if is_allowed_image(url) and looks_like_preview(url) and url not in found:
+            found.append(url)
+            if len(found) >= limit:
+                break
+    return found
+
+
 def first_image(markdown: str, base: str, limit: int = 12) -> str:
     """모델 카드에서 미리보기로 쓸 만한 첫 이미지. 없으면 빈 문자열."""
-    if not markdown:
-        return ""
-    candidates = _MD_IMG.findall(markdown) + _HTML_IMG.findall(markdown)
-    for raw in candidates[:limit]:
-        url = resolve_image(raw, base)
-        if is_allowed_image(url) and looks_like_preview(url):
-            return url
-    return ""
+    got = gallery_from_markdown(markdown, base, limit=1, scan=limit)
+    return got[0] if got else ""
+
+
+def image_pair(url: str) -> dict:
+    """그리드용/확대용 URL 쌍. Civitai 는 CDN 크기 변형을 쓰고, 나머지는 원본 그대로다."""
+    if host_of(url) == "image.civitai.com":
+        return {"thumb": civitai_variant(url, 320), "large": civitai_variant(url, 1200)}
+    return {"thumb": url, "large": url}
+
+
+def sanitize_gallery(pairs) -> list[dict]:
+    """캐시나 소스에서 온 갤러리를 허용 호스트, 중복, 개수 기준으로 정리한다."""
+    out: list[dict] = []
+    seen: set[str] = set()
+    for p in pairs if isinstance(pairs, list) else []:
+        if not isinstance(p, dict):
+            continue
+        thumb = p.get("thumb")
+        if not isinstance(thumb, str) or not is_allowed_image(thumb):
+            continue
+        large = p.get("large")
+        if not isinstance(large, str) or not is_allowed_image(large):
+            large = thumb
+        if large in seen:
+            continue
+        seen.add(large)
+        out.append({"thumb": thumb, "large": large})
+        if len(out) >= MAX_IMAGES:
+            break
+    return out
+
+
+def set_gallery(item, urls) -> None:
+    """항목의 갤러리를 URL 목록으로 다시 채운다. thumb/thumb_large 는 항상 첫 장을 가리킨다."""
+    item.images = sanitize_gallery([image_pair(u) for u in urls if isinstance(u, str) and u])
+    item.thumb = item.images[0]["thumb"] if item.images else ""
+    item.thumb_large = item.images[0]["large"] if item.images else ""
+
+
+def add_images(item, urls) -> int:
+    """갤러리 뒤에 새 이미지를 붙인다(중복 제외, 상한 유지). 추가된 개수 반환."""
+    before = len(item.images)
+    have = [p["large"] for p in item.images]
+    set_gallery(item, have + [u for u in urls if isinstance(u, str)])
+    return len(item.images) - before
 
 
 def normalize_repo_base(base: str) -> str:
     return base if base.endswith("/") else base + "/"
 
 
-__all__ = ["ALLOWED_IMAGE_HOSTS", "is_allowed_image", "civitai_variant", "first_image", "resolve_image",
-           "looks_like_preview", "normalize_repo_base", "posixpath"]
+__all__ = ["ALLOWED_IMAGE_HOSTS", "MAX_IMAGES", "is_allowed_image", "civitai_variant", "first_image",
+           "gallery_from_markdown", "image_pair", "sanitize_gallery", "set_gallery", "add_images",
+           "resolve_image", "looks_like_preview", "normalize_repo_base", "posixpath"]

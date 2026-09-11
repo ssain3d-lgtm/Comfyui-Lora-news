@@ -36,6 +36,7 @@ class LoraItem:
     files: list = field(default_factory=list)   # safetensors 파일명
     thumb: str = ""               # 미리보기 이미지 URL, 그리드용 (전체 이용가 등급만)
     thumb_large: str = ""         # 클릭해서 크게 볼 때 쓰는 URL (없으면 thumb 그대로)
+    images: list = field(default_factory=list)   # 갤러리 [{"thumb","large"}, ...]. 첫 장 = thumb/thumb_large
     first_seen: str = ""          # 이 앱이 처음 발견한 시각
     last_seen: str = ""           # 마지막으로 소스가 실제로 돌려준 시각 (캐시 보관 기한 판단용)
     missed_runs: int = 0          # 소스가 (부분이라도) 동작했는데 이 항목이 안 나온 연속 횟수
@@ -67,6 +68,11 @@ class LoraItem:
                     clean[key] = 0
             elif field_def.type in ("bool", bool):
                 clean[key] = bool(value)
+            elif key == "images":
+                clean[key] = [
+                    {"thumb": v["thumb"], "large": v["large"] if isinstance(v.get("large"), str) and v["large"] else v["thumb"]}
+                    for v in value if isinstance(v, dict) and isinstance(v.get("thumb"), str) and v["thumb"]
+                ] if isinstance(value, list) else []
             elif field_def.type in ("list", list):
                 clean[key] = [v for v in value if isinstance(v, str)] if isinstance(value, list) else []
             else:

@@ -64,10 +64,15 @@
   <div class="lightbox-panel">
     <div class="lightbox-bar">
       <span id="lightbox-name" class="lightbox-name"></span>
+      <span id="lightbox-count" class="lightbox-count"></span>
       <a id="lightbox-link" class="btn ghost small" target="_blank" rel="noopener" data-i18n="open_source">원본 페이지 열기</a>
       <button id="lightbox-close" type="button" class="btn ghost small" data-close data-i18n="close">닫기</button>
     </div>
-    <img id="lightbox-img" class="lightbox-img" alt="" referrerpolicy="no-referrer" decoding="async">
+    <div class="lightbox-stage">
+      <button id="lightbox-prev" type="button" class="lightbox-nav prev" data-dir="-1" aria-label="이전 이미지" hidden>‹</button>
+      <img id="lightbox-img" class="lightbox-img" alt="" referrerpolicy="no-referrer" decoding="async" draggable="false">
+      <button id="lightbox-next" type="button" class="lightbox-nav next" data-dir="1" aria-label="다음 이미지" hidden>›</button>
+    </div>
   </div>
 </div>
 

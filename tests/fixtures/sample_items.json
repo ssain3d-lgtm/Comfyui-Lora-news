@@ -21,6 +21,14 @@
   "likes": 920,
   "files": [
    "lora.safetensors"
+  ],
+  "thumb": "https://huggingface.co/XLabs-AI/flux-RealismLora/resolve/main/images/example_1.png",
+  "thumb_large": "https://huggingface.co/XLabs-AI/flux-RealismLora/resolve/main/images/example_1.png",
+  "images": [
+   {
+    "thumb": "https://huggingface.co/XLabs-AI/flux-RealismLora/resolve/main/images/example_1.png",
+    "large": "https://huggingface.co/XLabs-AI/flux-RealismLora/resolve/main/images/example_1.png"
+   }
   ]
  },
  {
@@ -335,8 +343,23 @@
   "files": [
    "add-detail-xl.safetensors"
   ],
-  "thumb": "https://image.civitai.com/example/detail-tweaker.jpeg",
-  "version": "v1.0"
+  "thumb": "https://image.civitai.com/example/width=320/detail-tweaker-1.jpeg",
+  "version": "v1.0",
+  "images": [
+   {
+    "thumb": "https://image.civitai.com/example/width=320/detail-tweaker-1.jpeg",
+    "large": "https://image.civitai.com/example/width=1200/detail-tweaker-1.jpeg"
+   },
+   {
+    "thumb": "https://image.civitai.com/example/width=320/detail-tweaker-2.jpeg",
+    "large": "https://image.civitai.com/example/width=1200/detail-tweaker-2.jpeg"
+   },
+   {
+    "thumb": "https://image.civitai.com/example/width=320/detail-tweaker-3.jpeg",
+    "large": "https://image.civitai.com/example/width=1200/detail-tweaker-3.jpeg"
+   }
+  ],
+  "thumb_large": "https://image.civitai.com/example/width=1200/detail-tweaker-1.jpeg"
  },
  {
   "key": "civitai:1002",
@@ -419,8 +442,19 @@
   "files": [
    "kontext_inpaint_upscale_v1.2.json"
   ],
-  "thumb": "https://image.civitai.com/example/kontext-inpaint.jpeg",
-  "version": "v1.2"
+  "thumb": "https://image.civitai.com/example/width=320/kontext-inpaint-1.jpeg",
+  "version": "v1.2",
+  "images": [
+   {
+    "thumb": "https://image.civitai.com/example/width=320/kontext-inpaint-1.jpeg",
+    "large": "https://image.civitai.com/example/width=1200/kontext-inpaint-1.jpeg"
+   },
+   {
+    "thumb": "https://image.civitai.com/example/width=320/kontext-inpaint-2.jpeg",
+    "large": "https://image.civitai.com/example/width=1200/kontext-inpaint-2.jpeg"
+   }
+  ],
+  "thumb_large": "https://image.civitai.com/example/width=1200/kontext-inpaint-1.jpeg"
  },
  {
   "key": "civitai:2002",

@@ -12,6 +12,7 @@
   }
   const state = {
     items: [],
+    byKey: new Map(),
     labelsEn: { base_models: {}, categories: {} },
     status: {},
     filters: loadPrefs({
@@ -74,6 +75,9 @@
     readme: { ko: "모델 카드", en: "Model card" },
     show_thumbs: { ko: "썸네일", en: "Thumbnails" },
     enlarge: { ko: "크게 보기", en: "Enlarge" },
+    prev_image: { ko: "이전 이미지", en: "Previous image" },
+    next_image: { ko: "다음 이미지", en: "Next image" },
+    image_pos: { ko: "{i}/{n}", en: "{i}/{n}" },
     close: { ko: "닫기", en: "Close" },
     open_source: { ko: "원본 페이지 열기", en: "Open source page" },
     group_none: { ko: "묶기: 없음", en: "Group: none" },
@@ -149,6 +153,27 @@
   function safeLink(url) {
     return (typeof url === "string" && /^https?:\/\//i.test(url)) ? url : "#";
   }
+  // 항목의 이미지 목록. 서버가 준 갤러리를 그릴 때 한 번 더 호스트 검사한다.
+  // 이미지가 깨지면 목록에서 빼므로(onerror) 항목 객체에 붙여 두고 재사용한다.
+  function galleryOf(it) {
+    if (!it._gallery) {
+      const raw = (Array.isArray(it.images) && it.images.length) ? it.images
+        : (it.thumb ? [{ thumb: it.thumb, large: it.thumb_large }] : []);
+      const seen = new Set();
+      it._gallery = [];
+      raw.forEach((p) => {
+        const small = safeImage(p && p.thumb);
+        if (!small || seen.has(small)) return;
+        seen.add(small);
+        it._gallery.push({ thumb: small, large: safeImage(p.large) || small });
+      });
+    }
+    return it._gallery;
+  }
+  function itemOf(el) {
+    const wrap = el && el.closest ? el.closest(".thumb-wrap") : null;
+    return wrap ? { wrap, it: state.byKey.get(wrap.dataset.key) } : { wrap: null, it: null };
+  }
   function baseLabel(v) { return lang() === "en" ? (state.labelsEn.base_models[v] || v) : v; }
   function catLabel(v) { return lang() === "en" ? (state.labelsEn.categories[v] || v) : v; }
   function summaryOf(it) { return (lang() === "en" && it.summary_en) ? it.summary_en : it.summary_ko; }
@@ -215,6 +240,7 @@
       const res = await fetch("/api/items", { cache: "no-store" });
       const data = await res.json();
       state.items = data.items || [];
+      state.byKey = new Map(state.items.map((it) => [it.key, it]));
       state.labelsEn = data.labels_en || state.labelsEn;
       // demo 플래그는 응답 최상위에 온다. status 안으로 넣어 renderStatus 가 한 곳만 보게 한다.
       state.status = { ...(data.status || {}), demo: !!data.demo };
@@ -451,6 +477,73 @@
     return metric("⬇", t("downloads"), it.downloads) + metric("♥", t("likes"), it.likes);
   }
 
+  // 썸네일 블록. 여러 장이면 좌우 버튼과 장수 표시가 붙고, 방향키·스와이프로도 넘길 수 있다.
+  // <img> 는 한 개뿐이라 현재 장만 내려받는다. 나머지는 넘길 때 받는다.
+  function thumbBlock(it, g) {
+    const p = g[0];
+    const multi = g.length > 1;
+    const nav = multi
+      ? `<button type="button" class="thumb-nav prev" data-dir="-1" aria-label="${t("prev_image")}" title="${t("prev_image")}">‹</button>` +
+        `<button type="button" class="thumb-nav next" data-dir="1" aria-label="${t("next_image")}" title="${t("next_image")}">›</button>` +
+        `<span class="thumb-count" aria-live="polite">${t("image_pos", { i: 1, n: g.length })}</span>`
+      : "";
+    return `<div class="thumb-wrap${multi ? " multi" : ""}" data-key="${esc(it.key)}" data-index="0">` +
+      `<button type="button" class="thumb-btn" data-large="${esc(p.large)}" title="${t("enlarge")}">` +
+      `<img class="thumb" src="${esc(p.thumb)}" alt="${esc(t("preview_of", { name: it.name }))}" loading="lazy" decoding="async" fetchpriority="low" referrerpolicy="no-referrer" draggable="false"></button>${nav}</div>`;
+  }
+  // 카드의 썸네일을 index 번째 장으로 바꾼다. 범위를 넘으면 반대쪽으로 이어진다.
+  function showImage(wrap, index) {
+    const it = state.byKey.get(wrap.dataset.key);
+    const g = it ? galleryOf(it) : [];
+    if (!g.length) { wrap.remove(); return -1; }
+    const i = ((index % g.length) + g.length) % g.length;
+    wrap.dataset.index = String(i);
+    const img = wrap.querySelector(".thumb");
+    const btn = wrap.querySelector(".thumb-btn");
+    if (img && img.getAttribute("src") !== g[i].thumb) img.src = g[i].thumb;
+    if (btn) btn.dataset.large = g[i].large;
+    const count = wrap.querySelector(".thumb-count");
+    if (count) count.textContent = t("image_pos", { i: i + 1, n: g.length });
+    if (g.length < 2) {
+      wrap.classList.remove("multi");
+      wrap.querySelectorAll(".thumb-nav, .thumb-count").forEach((n) => n.remove());
+    }
+    return i;
+  }
+  // 깨진 이미지는 갤러리에서 빼고 다음 장을 보인다. 전부 깨지면 블록을 없앤다.
+  function dropBrokenImage(img) {
+    const { wrap, it } = itemOf(img);
+    if (!wrap) return;
+    if (!it) { wrap.remove(); return; }
+    const g = galleryOf(it);
+    const bad = img.getAttribute("src");
+    const idx = g.findIndex((p) => p.thumb === bad);
+    if (idx >= 0) g.splice(idx, 1);
+    if (!g.length) { wrap.remove(); if (lb.key === it.key) closeLightbox(); return; }
+    showImage(wrap, idx >= 0 ? idx : 0);
+  }
+  // 가로 스와이프(터치·마우스 드래그). 세로 스크롤은 브라우저에 맡긴다(touch-action: pan-y).
+  function attachSwipe(root, selector, onSwipe) {
+    let start = null;
+    root.addEventListener("pointerdown", (e) => {
+      if (e.pointerType === "mouse" && e.button !== 0) return;
+      const target = e.target.closest(selector);
+      if (!target) return;
+      start = { x: e.clientX, y: e.clientY, target, at: Date.now() };
+    });
+    root.addEventListener("pointerup", (e) => {
+      if (!start) return;
+      const s0 = start;
+      start = null;
+      const dx = e.clientX - s0.x, dy = e.clientY - s0.y;
+      if (Math.abs(dx) < 40 || Math.abs(dx) < Math.abs(dy) * 1.5 || Date.now() - s0.at > 1000) return;
+      s0.target.dataset.swiped = "1";           // 곧 따라오는 click 으로 확대창이 열리지 않게
+      setTimeout(() => { delete s0.target.dataset.swiped; }, 400);
+      onSwipe(s0.target, dx < 0 ? 1 : -1);
+    });
+    root.addEventListener("pointercancel", () => { start = null; });
+  }
+
   function card(it) {
     const isWf = (it.kind || "lora") === "workflow";
     const triggers = (it.trigger_words || []).length
@@ -472,12 +565,8 @@
         `${readme ? `<p><b>${t("readme")}</b><br>${esc(readme)}</p>` : ""}` +
         `${desc ? `<p>${esc(desc)}</p>` : ""}${files}</details>`
       : "";
-    const small = state.filters.thumbs ? safeImage(it.thumb) : "";
-    const large = safeImage(it.thumb_large) || small;
-    const thumb = small
-      ? `<button type="button" class="thumb-btn" data-large="${esc(large)}" data-name="${esc(it.name)}" data-url="${esc(safeLink(it.url))}" title="${t("enlarge")}">` +
-        `<img class="thumb" src="${esc(small)}" alt="${esc(t("preview_of", { name: it.name }))}" loading="lazy" decoding="async" fetchpriority="low" referrerpolicy="no-referrer" onerror="this.parentElement.remove()"></button>`
-      : "";
+    const gallery = state.filters.thumbs ? galleryOf(it) : [];
+    const thumb = gallery.length ? thumbBlock(it, gallery) : "";
     return `<article class="card${it.is_new ? " new" : ""}">
       ${thumb}
       <div class="card-top">
@@ -540,25 +629,51 @@
   // ---------------------------------------------------------------- events
   // ---------------------------------------------------------------- lightbox
   let lastFocus = null;
-  function openLightbox(large, name, url) {
-    const box = $("#lightbox");
-    const img = $("#lightbox-img");
+  const lb = { key: null, index: 0, wrap: null };
+  function openLightbox(wrap) {
+    const it = state.byKey.get(wrap.dataset.key);
+    if (!it || !galleryOf(it).length) return;
     lastFocus = document.activeElement;
-    img.src = "";
-    img.alt = t("preview_of", { name });
-    $("#lightbox-name").textContent = name;
-    $("#lightbox-link").href = url || "#";
-    $("#lightbox-link").hidden = !url || url === "#";
-    box.hidden = false;
+    lb.key = it.key;
+    lb.wrap = wrap;
+    $("#lightbox-name").textContent = it.name;
+    const url = safeLink(it.url);
+    $("#lightbox-link").href = url;
+    $("#lightbox-link").hidden = url === "#";
+    $("#lightbox-prev").setAttribute("aria-label", t("prev_image"));
+    $("#lightbox-next").setAttribute("aria-label", t("next_image"));
+    $("#lightbox").hidden = false;
     document.body.classList.add("no-scroll");
-    img.src = large;            // 큰 이미지는 클릭했을 때만 받는다
+    lightboxShow(parseInt(wrap.dataset.index, 10) || 0);
     $("#lightbox-close").focus();
+  }
+  function lightboxShow(index) {
+    const it = state.byKey.get(lb.key);
+    const g = it ? galleryOf(it) : [];
+    if (!g.length) { closeLightbox(); return; }
+    const i = ((index % g.length) + g.length) % g.length;
+    lb.index = i;
+    const img = $("#lightbox-img");
+    img.src = "";
+    img.alt = t("preview_of", { name: it.name });
+    img.src = g[i].large;            // 큰 이미지는 보는 장만 받는다. 옆 장은 미리 받지 않는다.
+    const multi = g.length > 1;
+    $("#lightbox-count").textContent = multi ? t("image_pos", { i: i + 1, n: g.length }) : "";
+    $("#lightbox-prev").hidden = !multi;
+    $("#lightbox-next").hidden = !multi;
+    if (lb.wrap && lb.wrap.isConnected) showImage(lb.wrap, i);   // 닫았을 때 카드도 같은 장을 보이게
+  }
+  function lightboxStep(dir) {
+    if ($("#lightbox").hidden) return;
+    lightboxShow(lb.index + dir);
   }
   function closeLightbox() {
     const box = $("#lightbox");
     if (box.hidden) return;
     box.hidden = true;
     $("#lightbox-img").src = "";
+    lb.key = null;
+    lb.wrap = null;
     document.body.classList.remove("no-scroll");
     if (lastFocus && lastFocus.focus) lastFocus.focus();
   }
@@ -611,13 +726,52 @@
     });
     $("#show-thumbs").addEventListener("change", (e) => { state.filters.thumbs = e.target.checked; savePrefs(); renderList(); });
     $("#lightbox").addEventListener("click", (e) => {
+      const nav = e.target.closest(".lightbox-nav");
+      if (nav) { lightboxStep(parseInt(nav.dataset.dir, 10) || 1); return; }
+      if (e.target.closest("[data-swiped]")) return;
       if (e.target === e.currentTarget || e.target.closest("[data-close]")) closeLightbox();
     });
-    document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeLightbox(); });
+    $("#lightbox-img").addEventListener("error", () => {
+      const it = state.byKey.get(lb.key);
+      if (!it) return;
+      const g = galleryOf(it);
+      const bad = $("#lightbox-img").getAttribute("src");
+      const idx = g.findIndex((p) => p.large === bad);
+      if (idx >= 0) g.splice(idx, 1);
+      if (!g.length) { closeLightbox(); if (lb.wrap) lb.wrap.remove(); return; }
+      lightboxShow(idx >= 0 ? idx : 0);
+    });
+    attachSwipe($("#lightbox"), ".lightbox-stage", (_, dir) => lightboxStep(dir));
+    attachSwipe($("#list"), ".thumb-wrap", (wrap, dir) => showImage(wrap, (parseInt(wrap.dataset.index, 10) || 0) + dir));
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") { closeLightbox(); return; }
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      const dir = e.key === "ArrowLeft" ? -1 : 1;
+      if (!$("#lightbox").hidden) { e.preventDefault(); lightboxStep(dir); return; }
+      const { wrap } = itemOf(e.target);
+      if (wrap && wrap.classList.contains("multi")) {
+        e.preventDefault();
+        showImage(wrap, (parseInt(wrap.dataset.index, 10) || 0) + dir);
+      }
+    });
+    // <img> 의 error 는 버블링하지 않으므로 캡처 단계에서 받는다
+    $("#list").addEventListener("error", (e) => {
+      if (e.target && e.target.classList && e.target.classList.contains("thumb")) dropBrokenImage(e.target);
+    }, true);
     $("#list").addEventListener("click", async (e) => {
       if (e.target.closest("[data-clear]")) { clearFilters(); return; }
+      const nav = e.target.closest(".thumb-nav");
+      if (nav) {
+        const { wrap } = itemOf(nav);
+        if (wrap) showImage(wrap, (parseInt(wrap.dataset.index, 10) || 0) + (parseInt(nav.dataset.dir, 10) || 1));
+        return;
+      }
       const tb = e.target.closest(".thumb-btn");
-      if (tb) { openLightbox(tb.dataset.large, tb.dataset.name, tb.dataset.url); return; }
+      if (tb) {
+        const { wrap } = itemOf(tb);
+        if (wrap && !wrap.dataset.swiped) openLightbox(wrap);
+        return;
+      }
       const el = e.target.closest("[data-copy]"); if (!el) return;
       try {
         await navigator.clipboard.writeText(el.dataset.copy);

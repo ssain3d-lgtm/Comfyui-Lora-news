@@ -12,7 +12,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from .. import http
 from ..i18n import msg
 from ..models import LoraItem
-from ..images import civitai_variant, is_allowed_image
+from ..images import MAX_IMAGES, is_allowed_image, set_gallery
 from ..text import strip_html
 
 log = logging.getLogger(__name__)
@@ -73,7 +73,8 @@ def parse_model(m: dict) -> LoraItem | None:
     files = files[:8]
 
     # 미리보기 이미지: 전체 이용가 등급(nsfwLevel <= 1)만 쓴다. 없으면 표시하지 않는다.
-    thumb = ""
+    # 최근 두 버전의 예시 이미지를 순서대로 모은다. 카드에서 좌우로 넘겨 볼 수 있다.
+    gallery: list[str] = []
     for v in versions[:2]:
         for img in v.get("images") or []:
             if not isinstance(img, dict) or img.get("type") not in (None, "image"):
@@ -84,10 +85,11 @@ def parse_model(m: dict) -> LoraItem | None:
                 level = 99 if raw_level is None else int(raw_level)   # 등급을 모르면 표시하지 않는다
             except (TypeError, ValueError):
                 level = 99
-            if isinstance(url, str) and is_allowed_image(url) and level <= 1 and not img.get("nsfw"):
-                thumb = url
+            if isinstance(url, str) and is_allowed_image(url) and level <= 1 and not img.get("nsfw") and url not in gallery:
+                gallery.append(url)
+            if len(gallery) >= MAX_IMAGES:
                 break
-        if thumb:
+        if len(gallery) >= MAX_IMAGES:
             break
 
     published = [_dt(v.get("publishedAt") or v.get("createdAt")) for v in versions]
@@ -120,7 +122,7 @@ def parse_model(m: dict) -> LoraItem | None:
     base_lower = base_raw.lower()
     pipeline = "text-to-video" if "video" in base_lower else "text-to-image"
 
-    return LoraItem(
+    item = LoraItem(
         key=f"civitai:{mid}",
         source="civitai",
         kind=kind,
@@ -139,9 +141,9 @@ def parse_model(m: dict) -> LoraItem | None:
         likes=int(stats.get("thumbsUpCount") or stats.get("favoriteCount") or 0),
         nsfw=nsfw,
         files=files,
-        thumb="" if nsfw else civitai_variant(thumb, 320),        # 그리드: 약 20~40KB
-        thumb_large="" if nsfw else civitai_variant(thumb, 1200),  # 확대 보기
     )
+    set_gallery(item, [] if nsfw else gallery)   # 그리드 320px(약 20~40KB) / 확대 1200px 변형
+    return item
 
 
 def fetch(limit: int = 100, token: str = "", timeout: int = 30, nsfw: bool = False,

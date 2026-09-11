@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from .. import http
 from ..i18n import msg
 from ..classify import extract_trigger_words
-from ..images import is_allowed_image, looks_like_preview, resolve_image
+from ..images import MAX_IMAGES, is_allowed_image, looks_like_preview, resolve_image, set_gallery
 from ..models import LoraItem
 
 log = logging.getLogger(__name__)
@@ -82,7 +82,7 @@ def parse_model(m: dict, kind: str = "lora", dataset: bool = False) -> LoraItem 
         triggers = [instance_prompt.strip()[:80]]
 
     examples: list[str] = []
-    widget_image = ""
+    widget_images: list[str] = []
     for w in card.get("widget") or []:
         if isinstance(w, dict):
             p = w.get("text") or w.get("prompt") or (w.get("inputs") if isinstance(w.get("inputs"), str) else None)
@@ -90,10 +90,10 @@ def parse_model(m: dict, kind: str = "lora", dataset: bool = False) -> LoraItem 
                 examples.append(p.strip()[:200])
             # diffusers 카드 형식: widget[].output.url 이 예시 출력 이미지 (추가 요청 없이 얻는 썸네일)
             out = w.get("output")
-            if not widget_image and isinstance(out, dict) and isinstance(out.get("url"), str):
+            if isinstance(out, dict) and isinstance(out.get("url"), str) and len(widget_images) < MAX_IMAGES:
                 candidate = resolve_image(out["url"], f"https://huggingface.co/{mid}/resolve/main/")
-                if is_allowed_image(candidate) and looks_like_preview(candidate):
-                    widget_image = candidate
+                if is_allowed_image(candidate) and looks_like_preview(candidate) and candidate not in widget_images:
+                    widget_images.append(candidate)
 
     files = []
     exts = (".json",) if kind == "workflow" else _WEIGHT_EXT
@@ -115,7 +115,7 @@ def parse_model(m: dict, kind: str = "lora", dataset: bool = False) -> LoraItem 
 
     author = m.get("author") or mid.split("/")[0]
     prefix = "datasets/" if dataset else ""
-    return LoraItem(
+    item = LoraItem(
         key=f"hf:{prefix}{mid}",
         source="huggingface",
         kind=kind,
@@ -134,9 +134,9 @@ def parse_model(m: dict, kind: str = "lora", dataset: bool = False) -> LoraItem 
         likes=int(m.get("likes") or 0),
         nsfw="not-for-all-audiences" in tags,
         files=files,
-        thumb="" if "not-for-all-audiences" in tags else widget_image,
-        thumb_large="" if "not-for-all-audiences" in tags else widget_image,
     )
+    set_gallery(item, [] if item.nsfw else widget_images)
+    return item
 
 
 def fetch(limit: int = 100, token: str = "", timeout: int = 30, workers: int = 4) -> tuple[list[LoraItem], list[dict], dict]:

@@ -331,6 +331,58 @@ class NewDetectionTests(unittest.TestCase):
                 got = {it.key: bool(it.thumb) for it in svc.items}
                 self.assertEqual(got, expect, mode)
 
+    def test_gallery_policy_promotes_old_cache_and_filters_entries(self):
+        ok1 = "https://image.civitai.com/T/u/width=320/1.jpeg"
+        ok2 = "https://image.civitai.com/T/u/width=320/2.jpeg"
+        with tempfile.TemporaryDirectory() as tmp:
+            store = Store(Path(tmp))
+            store.save_cache({"items": [
+                {"key": "civitai:old", "source": "civitai", "name": "old", "author": "a", "url": "",
+                 "thumb": ok1, "thumb_large": "https://image.civitai.com/T/u/width=1200/1.jpeg"},
+                {"key": "civitai:new", "source": "civitai", "name": "new", "author": "a", "url": "",
+                 "thumb": ok1, "thumb_large": ok1,
+                 "images": [{"thumb": ok1, "large": ok1}, {"thumb": "https://evil.example/t.gif", "large": "https://evil.example/t.gif"},
+                            {"thumb": ok2, "large": ok2}]},
+            ], "updated_at": "2026-01-01T00:00:00+00:00"})
+            svc = make_service(tmp, lambda: ([], []), lambda: ([], []))
+            by = {it.key: it for it in svc.items}
+            self.assertEqual(by["civitai:old"].images, [{"thumb": ok1, "large": "https://image.civitai.com/T/u/width=1200/1.jpeg"}],
+                             "갤러리가 생기기 전 캐시는 한 장짜리 갤러리로 올린다")
+            self.assertEqual([p["thumb"] for p in by["civitai:new"].images], [ok1, ok2], "허용되지 않는 호스트는 갤러리에서도 빠진다")
+            self.assertEqual(by["civitai:new"].thumb, ok1)
+
+    def test_readme_images_survive_the_next_run(self):
+        base = "https://raw.githubusercontent.com/o/r/HEAD/"
+        calls = []
+
+        def enrich(items):
+            calls.append(len(items))
+            for it in items:
+                it.readme_excerpt = "A workflow."
+                it.readme_fetched_at = "now"
+                from lora_news.images import add_images
+                add_images(it, [base + "a.png", base + "b.png"])
+            return len(items)
+
+        def gh_item():
+            return LoraItem(key="gh:o/r", source="github", kind="workflow", name="o/r", author="o", url="https://github.com/o/r")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            for _ in range(2):
+                cfg = Config()
+                cfg.data_dir = Path(tmp)
+                cfg.claude_enabled = False
+                svc = NewsService(cfg, store=Store(cfg.data_dir),
+                                  hf_fetch=lambda: ([], [], {"queries": 1, "failed": 0}),
+                                  gh_fetch=lambda: ([gh_item()], [], {"queries": 8, "failed": 0}),
+                                  cv_fetch=lambda: ([], [], {"queries": 1, "failed": 0}),
+                                  readme_enricher=enrich)
+                svc.refresh()
+            self.assertEqual(calls, [1], "모델 카드는 한 번만 읽는다")
+            self.assertEqual([p["thumb"] for p in svc.items[0].images], [base + "a.png", base + "b.png"],
+                             "카드를 다시 읽지 않아도 거기서 얻은 이미지는 남아야 한다")
+            self.assertEqual(svc.items[0].thumb, base + "a.png")
+
     def test_unknown_source_name_warns_instead_of_disabling_everything(self):
         hf = self.items_for("huggingface", 2)
         with tempfile.TemporaryDirectory() as tmp:
