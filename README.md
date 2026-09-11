@@ -132,7 +132,7 @@ Use the **Refresh** button at any time; the **EN / 한국어** button switches t
 - **Classification**: chips for base model and purpose; group by purpose, base model or source. Workflows use their own categories: image generation, video generation, editing/inpainting, upscale/fix, ControlNet/pose, character consistency, training/tools, collections/templates
 - **Summaries**: bilingual one-liners that lead with the model's own description when it has one, falling back to a base-model and purpose template when it does not. The base model and purpose are already chips on the card, so the summary does not repeat them
 - **Language**: the page opens in your browser's language and the EN / 한국어 button switches it
-- **Preview thumbnails**: Civitai items show a small preview (about 20 to 40 KB each, via Civitai's resizing CDN); Hugging Face items use the example image from the model card; GitHub workflow repositories use the images in their README. Click any thumbnail to enlarge it. When an item has several sample images (up to 8), flip through them on the card or in the enlarged view with the arrow buttons, the left/right arrow keys, or a swipe; only the image you are looking at is downloaded. All-ages images only, never for NSFW items, and only from known hosts. Turn them off with the "Thumbnails" checkbox or `LORA_NEWS_THUMBS=off`
+- **Preview thumbnails**: Civitai items show a small preview (about 20 to 40 KB each, via Civitai's resizing CDN); Hugging Face items use the example image from the model card; GitHub workflow repositories use the images in their README. Click any thumbnail to enlarge it. When an item has several sample images (up to 8), flip through them on the card or in the enlarged view with the arrow buttons, the left/right arrow keys, a swipe, or a horizontal trackpad scroll in the enlarged view; only the image you are looking at is downloaded. All-ages images only, never for NSFW items, and only from known hosts. Turn them off with the "Thumbnails" checkbox or `LORA_NEWS_THUMBS=off`
 - **Pick your sources**: `LORA_NEWS_SOURCES=huggingface,github` skips a source that is blocked for you
 - **Trigger words**: pulled from Hugging Face model cards (`instance_prompt`, "Trigger words:") and Civitai `trainedWords`; click to copy
 - **Sort / search**: new first, added, updated, downloads, likes/stars, name; text search; hide NSFW (on by default)
@@ -358,7 +358,7 @@ git pull
   워크플로우는 이미지 생성 · 영상 생성 · 편집/인페인팅 · 업스케일/보정 · 컨트롤넷/포즈 · 캐릭터 일관성 · 학습/도구 · 모음/템플릿으로 분류
 - **한/영 요약**: 설명이 있으면 그 문장을 앞세우고, 없으면 베이스 모델과 용도 템플릿으로 대체합니다. 베이스 모델과 용도는 이미 칩으로 떠 있어서 요약에서 되풀이하지 않습니다
 - **언어**: 브라우저 언어로 열리고 EN / 한국어 버튼으로 전환합니다
-- **미리보기 썸네일**: Civitai 는 크기 조절 CDN 을 써서 장당 20~40KB 짜리 작은 이미지를, Hugging Face 는 모델 카드의 예시 이미지를, GitHub 워크플로우 저장소는 README 의 이미지를 보여줍니다. 클릭하면 크게 볼 수 있습니다. 예시 이미지가 여러 장이면(최대 8장) 카드에서나 확대 화면에서 좌우 버튼, 방향키, 스와이프로 넘겨 볼 수 있고, 보고 있는 장만 내려받습니다. 전체 이용가 이미지만, NSFW 항목은 제외, 알려진 호스트만 허용합니다. "썸네일" 체크박스나 `LORA_NEWS_THUMBS=off` 로 끌 수 있습니다
+- **미리보기 썸네일**: Civitai 는 크기 조절 CDN 을 써서 장당 20~40KB 짜리 작은 이미지를, Hugging Face 는 모델 카드의 예시 이미지를, GitHub 워크플로우 저장소는 README 의 이미지를 보여줍니다. 클릭하면 크게 볼 수 있습니다. 예시 이미지가 여러 장이면(최대 8장) 카드에서나 확대 화면에서 좌우 버튼, 방향키, 스와이프로 넘겨 볼 수 있고(확대 화면에서는 트랙패드 좌우 스크롤도 됩니다), 보고 있는 장만 내려받습니다. 전체 이용가 이미지만, NSFW 항목은 제외, 알려진 호스트만 허용합니다. "썸네일" 체크박스나 `LORA_NEWS_THUMBS=off` 로 끌 수 있습니다
 - **소스 선택**: `LORA_NEWS_SOURCES=huggingface,github` 로 막혀 있는 소스를 건너뛸 수 있습니다
 - **트리거 워드**: HF 모델 카드의 `instance_prompt` / "Trigger words:" 문구, Civitai의 `trainedWords` 자동 추출, 클릭하면 복사
 - **정렬/검색**: 신규 우선, 등록일, 수정일, 다운로드, 좋아요/스타, 이름 · 텍스트 검색 · NSFW 숨기기(기본)

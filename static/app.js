@@ -742,6 +742,23 @@
       lightboxShow(idx >= 0 ? idx : 0);
     });
     attachSwipe($("#lightbox"), ".lightbox-stage", (_, dir) => lightboxStep(dir));
+    // 확대 화면에서 트랙패드 두 손가락 좌우 스크롤(또는 Shift+휠)로 넘기기.
+    // 한 번의 제스처가 관성까지 수십 개의 이벤트로 오므로, 한 제스처에 한 장만 넘기고 손을 뗀 뒤(200ms 공백) 다시 받는다.
+    const wheel = { acc: 0, last: 0, armed: true };
+    $("#lightbox").addEventListener("wheel", (e) => {
+      if ($("#lightbox").hidden) return;
+      const dx = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : (e.shiftKey ? e.deltaY : 0);
+      if (!dx) return;
+      e.preventDefault();
+      const now = Date.now();
+      if (now - wheel.last > 200) { wheel.armed = true; wheel.acc = 0; }
+      wheel.last = now;
+      if (!wheel.armed) return;
+      wheel.acc += dx;
+      if (Math.abs(wheel.acc) < 40) return;
+      wheel.armed = false;
+      lightboxStep(wheel.acc > 0 ? 1 : -1);
+    }, { passive: false });
     attachSwipe($("#list"), ".thumb-wrap", (wrap, dir) => showImage(wrap, (parseInt(wrap.dataset.index, 10) || 0) + dir));
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape") { closeLightbox(); return; }
